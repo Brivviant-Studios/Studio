@@ -11,6 +11,7 @@ const DEFAULT_ADMIN={id:'admin-brivviant',name:'Brivviant',nickname:'Main Admin'
 let state=loadState();
 let pendingFiles=[];
 let pendingProfileAvatar='';
+let pendingAiPdf=null;
 const $=s=>document.querySelector(s); const $$=s=>Array.from(document.querySelectorAll(s));
 function uid(){return crypto.randomUUID?.()||String(Date.now()+Math.random())}
 function today(){return new Date().toISOString().slice(0,10)}
@@ -55,14 +56,85 @@ function getUserName(id){const u=state.users.find(x=>x.id===id); return u?(u.nic
 function renderBoard(){
   const board=$('#kanbanBoard'); const tasks=filteredTasks();
   board.innerHTML=COLUMNS.map(col=>{const list=tasks.filter(t=>t.column===col.id || (col.id==='late'&&isLate(t)&&t.column!=='done'));return `<div class="kanban-col" data-col="${col.id}"><div class="col-head"><b>${col.title}</b><span class="col-count">${list.length}</span></div><div class="cards-stack">${list.map(taskCard).join('')||`<div class="empty">لا توجد كروت</div>`}</div></div>`}).join('');
-  $$('.task-card').forEach(el=>el.onclick=()=>openTask(el.dataset.id));
+  $$('.task-card').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-ai-brief]'))return;openTask(el.dataset.id)}); $$('#kanbanBoard [data-ai-brief]').forEach(b=>b.onclick=e=>{e.stopPropagation();openAiBrief(b.dataset.aiBrief)});
 }
 function priorityClass(p){p=String(p||'').toLowerCase();return p==='urgent'?'urgent':p==='high'?'high':''}
-function taskCard(t){const atts=t.attachments||[];return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>Event</small><b>${safe(getEventName(t.eventId))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${a.data}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div></article>`}
-function renderMyTasks(){const u=currentUser(); const list=$('#myTasksList'); if(!u){list.innerHTML='';return} const tasks=state.tasks.filter(t=>isTaskOwner(t)); list.innerHTML=tasks.map(t=>`<article class="horizontal-card" data-id="${t.id}"><div><div class="main-title">${safe(t.title)}</div><p>${safe(getEventName(t.eventId))}</p></div><div class="cell"><small>Status</small><b>${safe(COLUMNS.find(c=>c.id===t.column)?.title||t.column)}</b></div><div class="cell"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="cell"><small>Priority</small><b>${safe(t.priority||'Normal')}</b></div><div class="cell"><small>Attachments</small><b>${(t.attachments||[]).length}</b></div><button data-open="${t.id}">Open</button></article>`).join('')||`<div class="empty">لا توجد تاسكات مخصصة لك</div>`; list.querySelectorAll('button[data-open]').forEach(b=>b.onclick=()=>openTask(b.dataset.open))}
+function taskCard(t){const atts=t.attachments||[];return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>Event</small><b>${safe(getEventName(t.eventId))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${a.data}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div><div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
+function renderMyTasks(){const u=currentUser(); const list=$('#myTasksList'); if(!u){list.innerHTML='';return} const tasks=state.tasks.filter(t=>isTaskOwner(t)); list.innerHTML=tasks.map(t=>`<article class="horizontal-card" data-id="${t.id}"><div><div class="main-title">${safe(t.title)}</div><p>${safe(getEventName(t.eventId))}</p></div><div class="cell"><small>Status</small><b>${safe(COLUMNS.find(c=>c.id===t.column)?.title||t.column)}</b></div><div class="cell"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="cell"><small>Priority</small><b>${safe(t.priority||'Normal')}</b></div><div class="cell"><small>Attachments</small><b>${(t.attachments||[]).length}</b></div><div class="row-actions"><button data-ai-brief="${t.id}">شرح العناصر</button><button data-open="${t.id}">Open</button></div></article>`).join('')||`<div class="empty">لا توجد تاسكات مخصصة لك</div>`; list.querySelectorAll('button[data-open]').forEach(b=>b.onclick=()=>openTask(b.dataset.open)); list.querySelectorAll('button[data-ai-brief]').forEach(b=>b.onclick=()=>openAiBrief(b.dataset.aiBrief))}
 function renderEvents(){const grid=$('#eventsGrid'); grid.innerHTML=state.events.map(e=>`<article class="event-card" data-id="${e.id}"><h3>${safe(e.name)}</h3><p>${safe(e.client||'')}</p><p>${safe(e.date||'')}</p><button data-edit-event="${e.id}">Edit</button></article>`).join(''); grid.querySelectorAll('[data-edit-event]').forEach(b=>b.onclick=()=>openEvent(b.dataset.editEvent))}
 function renderTeam(){const grid=$('#teamGrid'); grid.innerHTML=state.users.map(u=>`<article class="person-card"><h3>${safe(u.nickname||u.name)}</h3><p>@${safe(u.username)} — ${safe(u.role)}</p><p>${safe(u.email||'')}</p><button data-edit-user="${u.id}">Edit</button></article>`).join(''); grid.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>openAccount(b.dataset.editUser))}
 function renderLogs(){const list=$('#logsList'); if(!list)return; list.innerHTML=state.logs.map(l=>`<div class="log-card"><b>${safe(l.action)}</b><span>${safe(l.actor)}<br><small>@${safe(l.username)}</small></span><p>${safe(l.details)} ${l.target?`<small>— ${safe(l.target)}</small>`:''}</p><small>${safe(l.createdAtText)}</small></div>`).join('')||`<div class="empty">No logs yet</div>`}
+
+function briefAnalysisToHtml(analysis){
+  if(!analysis) return '<div class="empty">لا يوجد تحليل محفوظ لهذا الكارت.</div>';
+  const esc=safe;
+  const arr=(v)=>Array.isArray(v)?v.filter(Boolean):[];
+  if(typeof analysis==='string') return `<div class="brief-block">${esc(analysis).replace(/\n/g,'<br>')}</div>`;
+  const section=(title,items)=>arr(items).length?`<h3>${esc(title)}</h3><ul>${arr(items).map(x=>`<li>${esc(typeof x==='string'?x:JSON.stringify(x))}</li>`).join('')}</ul>`:'';
+  return `${analysis.summary?`<div class="brief-block"><b>Summary</b><br>${esc(analysis.summary)}</div>`:''}
+    ${section('العناصر المطلوبة من العميل',analysis.required_elements)}
+    ${section('المقاسات / الكميات',analysis.dimensions_quantities)}
+    ${section('الخامات / التشطيبات',analysis.materials_finishes)}
+    ${section('المخرجات المطلوبة',analysis.deliverables)}
+    ${section('المواعيد المهمة',analysis.deadlines)}
+    ${section('اشتراطات خاصة',analysis.special_requirements)}
+    ${section('أسئلة ناقصة للعميل',analysis.missing_questions)}
+    ${analysis.raw?`<h3>Raw Notes</h3><div class="brief-block">${esc(analysis.raw).replace(/\n/g,'<br>')}</div>`:''}`;
+}
+function openAiBrief(id){
+  const t=state.tasks.find(x=>x.id===id); if(!t)return;
+  pendingAiPdf=null;
+  $('#aiBriefTaskId').value=id;
+  $('#aiBriefPdf').value='';
+  $('#aiBriefTaskContext').innerHTML=`<b>${safe(t.title)}</b><br><span>${safe(getEventName(t.eventId))}</span><br><small>Owner: ${safe(t.ownerName||getUserName(t.owner))}</small>`;
+  $('#aiBriefStatus').textContent='';
+  $('#aiBriefOutput').classList.toggle('empty',!t.aiBriefAnalysis);
+  $('#aiBriefOutput').innerHTML=briefAnalysisToHtml(t.aiBriefAnalysis);
+  $('#aiBriefDialog').showModal();
+}
+function dataUrlBase64(dataUrl){return String(dataUrl||'').split(',')[1]||''}
+async function analyzeBrief(){
+  const task=state.tasks.find(x=>x.id===$('#aiBriefTaskId').value); if(!task)return;
+  if(!pendingAiPdf){$('#aiBriefStatus').textContent='ارفع PDF الأول.';return}
+  const cfg=window.BRIVVIANT_CONFIG||{};
+  const endpoint=cfg.AI_BRIEF_ENDPOINT || (cfg.SUPABASE_URL?`${cfg.SUPABASE_URL.replace(/\/$/,'')}/functions/v1/analyze-brief`:'');
+  if(!endpoint){$('#aiBriefStatus').textContent='AI API مش متوصل. اكتب AI_BRIEF_ENDPOINT في config.js أو فعّل Supabase Edge Function.';return}
+  $('#aiBriefStatus').textContent='جاري تحليل كراسة الشروط بالـ AI...';
+  $('#analyzeBriefBtn').disabled=true;
+  try{
+    const headers={'Content-Type':'application/json'};
+    if(cfg.SUPABASE_ANON_KEY) headers.Authorization=`Bearer ${cfg.SUPABASE_ANON_KEY}`;
+    const res=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({
+      task:{id:task.id,title:task.title,event:getEventName(task.eventId),notes:task.notes,tags:task.tags},
+      pdf:{name:pendingAiPdf.name,type:pendingAiPdf.type,base64:dataUrlBase64(pendingAiPdf.data)}
+    })});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||data.message||`API Error ${res.status}`);
+    task.aiBriefAnalysis=data.analysis||data;
+    task.aiBriefPdfName=pendingAiPdf.name;
+    task.aiBriefAnalyzedAt=new Date().toISOString();
+    saveState(); log('AI Brief Analysis',pendingAiPdf.name,task.title);
+    $('#aiBriefOutput').classList.remove('empty');
+    $('#aiBriefOutput').innerHTML=briefAnalysisToHtml(task.aiBriefAnalysis);
+    $('#aiBriefStatus').textContent='تم استخراج شرح العناصر وحفظه داخل الكارت.';
+    render();
+  }catch(err){
+    $('#aiBriefStatus').textContent='فشل التحليل: '+err.message;
+  }finally{$('#analyzeBriefBtn').disabled=false;}
+}
+function copyBrief(){
+  const t=state.tasks.find(x=>x.id===$('#aiBriefTaskId').value); if(!t?.aiBriefAnalysis){$('#aiBriefStatus').textContent='لا يوجد تحليل لنسخه.';return}
+  const text=typeof t.aiBriefAnalysis==='string'?t.aiBriefAnalysis:JSON.stringify(t.aiBriefAnalysis,null,2);
+  navigator.clipboard?.writeText(text); $('#aiBriefStatus').textContent='تم نسخ التحليل.';
+}
+function convertBriefToTasks(){
+  const t=state.tasks.find(x=>x.id===$('#aiBriefTaskId').value); if(!t?.aiBriefAnalysis)return;
+  const items=Array.isArray(t.aiBriefAnalysis.required_elements)?t.aiBriefAnalysis.required_elements:[];
+  if(!items.length){$('#aiBriefStatus').textContent='لا توجد عناصر واضحة لتحويلها إلى Tasks.';return}
+  items.forEach((item,i)=>state.tasks.push({id:uid(),eventId:t.eventId,title:String(item).slice(0,120),column:'todo',owner:t.owner,ownerName:t.ownerName,priority:'Normal',due:t.due,tags:'AI Brief',notes:`Generated from AI Brief Analysis of: ${t.title}`,attachments:[]}));
+  saveState(); log('Convert AI Brief To Tasks',`${items.length} tasks created`,t.title); $('#aiBriefStatus').textContent=`تم إنشاء ${items.length} Tasks من شرح العناصر.`; render();
+}
+
 function switchTab(tab){$$('.tab').forEach(s=>s.classList.toggle('active',s.id===tab));$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$('#pageTitle').textContent=$(`.nav-btn[data-tab="${tab}"]`)?.textContent||tab}
 function openTask(id=''){
   const t=state.tasks.find(x=>x.id===id)||null; pendingFiles=[]; $('#taskId').value=t?.id||''; $('#taskTitle').value=t?.title||''; $('#taskEvent').value=t?.eventId||state.events[0]?.id||''; $('#taskColumn').value=t?.column||'todo'; $('#taskOwner').value=t?.owner||currentUser()?.id||''; $('#taskPriority').value=t?.priority||'Normal'; $('#taskDue').value=t?.due||''; $('#taskTags').value=t?.tags||''; $('#taskNotes').value=t?.notes||''; $('#taskDelayReason').value=t?.delayReason||''; $('#deleteTaskBtn').classList.toggle('hidden',!t||!isAdmin());
@@ -90,6 +162,8 @@ function bind(){
   $('#addEventBtn').onclick=()=>openEvent(); $('#eventForm').onsubmit=saveEvent; $('#cancelEventBtn').onclick=()=>$('#eventDialog').close(); $('#deleteEventBtn').onclick=()=>{const id=$('#eventId').value;if(confirm('حذف الفعالية؟')){state.events=state.events.filter(e=>e.id!==id); saveState(); log('Delete Event',id); $('#eventDialog').close();render()}};
   $('#addPersonBtn').onclick=()=>openAccount(); $('#accountForm').onsubmit=saveAccount; $('#cancelAccountBtn').onclick=()=>$('#accountDialog').close(); $('#deleteAccountBtn').onclick=()=>{const id=$('#accountId').value;const u=state.users.find(x=>x.id===id); if(u&&confirm('حذف الحساب؟')){state.users=state.users.filter(x=>x.id!==id); saveState(); log('Delete Account',u.username); $('#accountDialog').close();render()}}; $('#generatePasswordBtn').onclick=()=>{$('#accountPassword').value='Bv@'+Math.random().toString(36).slice(2,10)};
   $('#profileForm').onsubmit=saveProfile; $('#cancelProfileBtn').onclick=()=>$('#profileDialog').close(); $('#profileImage').onchange=async e=>{const f=e.target.files[0]; if(f){const d=await fileToData(f); pendingProfileAvatar=d.data; $('#avatarPreview').innerHTML=`<img src="${pendingProfileAvatar}">`}};
+  $('#aiBriefPdf').onchange=async e=>{const f=e.target.files[0]; if(!f)return; if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf'){ $('#aiBriefStatus').textContent='الملف لازم يكون PDF.'; return } pendingAiPdf=await fileToData(f); $('#aiBriefStatus').textContent='تم رفع PDF: '+f.name};
+  $('#analyzeBriefBtn').onclick=analyzeBrief; $('#copyBriefBtn').onclick=copyBrief; $('#convertBriefTasksBtn').onclick=convertBriefToTasks; $('#closeAiBriefBtn').onclick=()=>$('#aiBriefDialog').close();
   $('#searchInput').oninput=renderBoard; $('#eventFilter').onchange=renderBoard; $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='brivviant-studio-events-state.json';a.click();URL.revokeObjectURL(a.href);log('Export JSON','State exported')}; $('#importInput').onchange=e=>{const f=e.target.files[0];if(!f)return; const r=new FileReader();r.onload=()=>{state=JSON.parse(r.result);saveState();log('Import JSON','State imported');render()};r.readAsText(f)};
 }
 function boot(){bind(); if(getSession()) $('#loginOverlay').classList.add('hidden'); render()}

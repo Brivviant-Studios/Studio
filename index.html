@@ -136,6 +136,26 @@
     </form>
   </dialog>
 
+
+  <dialog id="aiBriefDialog" class="wide-dialog">
+    <form method="dialog" id="aiBriefForm">
+      <h2>شرح العناصر — AI Brief Analysis</h2>
+      <input type="hidden" id="aiBriefTaskId" />
+      <div class="ai-task-context" id="aiBriefTaskContext"></div>
+      <label>PDF كراسة الشروط
+        <input id="aiBriefPdf" type="file" accept="application/pdf,.pdf" />
+      </label>
+      <div class="ai-actions-row">
+        <button type="button" id="analyzeBriefBtn">Analyze PDF</button>
+        <button type="button" id="copyBriefBtn">Copy Summary</button>
+        <button type="button" id="convertBriefTasksBtn" class="admin-only">Convert to Tasks</button>
+      </div>
+      <div id="aiBriefStatus" class="ai-status"></div>
+      <div id="aiBriefOutput" class="ai-output empty">ارفع PDF واضغط Analyze PDF لاستخراج العناصر المطلوبة من العميل.</div>
+      <div class="dialog-actions"><span></span><button type="button" id="closeAiBriefBtn">إغلاق</button></div>
+    </form>
+  </dialog>
+
   <div id="loginOverlay" class="login-overlay">
     <form id="loginForm" class="login-panel">
       <img src="assets/brivviant-logo.png" class="login-logo" alt="Brivviant" />
