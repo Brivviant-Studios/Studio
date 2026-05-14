@@ -222,9 +222,11 @@ async function analyzeBrief(){
   $('#aiBriefStatus').textContent='جاري تحليل كراسة الشروط بالـ AI...';
   $('#analyzeBriefBtn').disabled=true;
   try{
-    const headers={'Content-Type':'application/json'};
-    if(cfg.SUPABASE_ANON_KEY){ headers.Authorization=`Bearer ${cfg.SUPABASE_ANON_KEY}`; headers.apikey=cfg.SUPABASE_ANON_KEY; }
-    const res=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({
+    // Edge Function is deployed with verify_jwt=false to avoid CORS/Auth gateway failures.
+    // Keep Authorization optional only if you explicitly set AI_BRIEF_SEND_AUTH=true in config.js.
+    const headers={'Content-Type':'application/json','Accept':'application/json'};
+    if(cfg.AI_BRIEF_SEND_AUTH && cfg.SUPABASE_ANON_KEY){ headers.Authorization=`Bearer ${cfg.SUPABASE_ANON_KEY}`; headers.apikey=cfg.SUPABASE_ANON_KEY; }
+    const res=await fetch(endpoint,{method:'POST',mode:'cors',headers,body:JSON.stringify({
       task:{id:task.id,title:task.title,event:getEventName(task.eventId),notes:task.notes,tags:task.tags},
       pdf:{name:pendingAiPdf.name,type:pendingAiPdf.type,base64:dataUrlBase64(pendingAiPdf.data)}
     })});
@@ -239,7 +241,10 @@ async function analyzeBrief(){
     $('#aiBriefStatus').textContent='تم استخراج شرح العناصر وحفظه داخل الكارت.';
     render();
   }catch(err){
-    const msg=(err instanceof TypeError && String(err.message).includes('Failed to fetch'))?'فشل التحليل: Failed to fetch — غالبًا Edge Function analyze-brief غير معمولة Deploy أو CORS/Secrets ناقصة. شغّل Supabase Function وتأكد من OPENAI_API_KEY.':'فشل التحليل: '+err.message; $('#aiBriefStatus').textContent=msg;
+    const msg=(err instanceof TypeError && String(err.message).includes('Failed to fetch'))
+      ? 'فشل التحليل: Failed to fetch — الحل: Deploy للـ Edge Function باسم analyze-brief مع verify_jwt=false، ثم إضافة OPENAI_API_KEY في Secrets. افتح README_AI_SETUP.txt واتبع الخطوات حرفيًا.'
+      : 'فشل التحليل: '+err.message;
+    $('#aiBriefStatus').textContent=msg;
   }finally{$('#analyzeBriefBtn').disabled=false;}
 }
 function copyBrief(){
