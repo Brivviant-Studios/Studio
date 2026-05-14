@@ -31,3 +31,14 @@
 .task-drive a{color:var(--mint);text-decoration:none;font-weight:900;font-size:12px;word-break:break-all}
 @media(max-width:1350px){.mytask-card{grid-template-columns:1fr 1fr}.mytask-actions-panel{grid-column:1/-1}}
 @media(max-width:760px){.mytask-card{grid-template-columns:1fr}.mytask-actions-panel{grid-column:auto}}
+
+/* AI extracted elements inside the same task card */
+.elements-box{margin-top:12px;padding:12px;border:1px solid rgba(183,239,169,.22);border-radius:16px;background:rgba(183,239,169,.06);display:grid;gap:8px}
+.elements-title,.elements-panel h3{font-weight:900;color:#b7efa9;margin:0 0 2px}
+.element-row{padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.035)}
+.element-row b{display:block;font-size:13px;color:#fff;margin-bottom:2px}
+.element-row small{display:block;color:#b8c7c2;font-size:11px}
+.element-row p{margin:5px 0 0;color:#d9e5e0;font-size:12px;line-height:1.6}
+.more-elements{color:#b7efa9;font-weight:800}
+.elements-panel{margin:12px 0;padding:12px;border:1px dashed rgba(183,239,169,.25);border-radius:18px;background:rgba(0,0,0,.13)}
+.elements-panel .empty{color:#8fa29b;background:rgba(255,255,255,.03)}

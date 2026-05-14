@@ -1,40 +1,26 @@
-Brivviant Studio Events Trello UI — AI Brief Analysis
+BRIVVIANT STUDIO EVENTS TRELLO — GEMINI VERSION
 
-Login default:
-Username: Brivviant
-Password: Brivviant@123456
+This build uses the same Brivviant UI and Supabase Studio project.
 
-New feature:
-- Button inside every task card: شرح العناصر
-- Upload PDF كراسة الشروط
-- AI extracts:
-  - required_elements
-  - dimensions_quantities
-  - materials_finishes
-  - deliverables
-  - deadlines
-  - special_requirements
-  - missing_questions
-- Result is saved inside the task card as aiBriefAnalysis.
-- Admin can click Convert to Tasks to create task cards from extracted elements.
+Main changes:
+- AI Brief Analysis now uses Gemini through Supabase Edge Function.
+- Button: شرح العناصر inside every task card.
+- Upload PDF كراسة الشروط.
+- Gemini extracts required design elements.
+- Extracted elements are saved inside the SAME task card in خانة العناصر.
+- It does NOT create new task cards automatically.
 
-AI API setup with Supabase Edge Function:
-1) Install Supabase CLI and login.
-2) Link your project:
-   supabase link --project-ref YOUR_PROJECT_REF
-3) Set OpenAI key safely as secret:
-   supabase secrets set OPENAI_API_KEY=sk-xxxxxxxx
-4) Deploy function:
+Required setup:
+1) Run supabase-real-tables-setup.sql in Supabase SQL Editor.
+2) Add Gemini key:
+   supabase secrets set GEMINI_API_KEY=YOUR_GOOGLE_AI_STUDIO_KEY
+3) Deploy Edge Function:
    supabase functions deploy analyze-brief --no-verify-jwt
-5) In config.js set:
-   SUPABASE_URL: 'https://YOUR_PROJECT_REF.supabase.co'
-   SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY'
-   AI_BRIEF_ENDPOINT: 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/analyze-brief'
 
-Important:
-- Do not put the OpenAI API key inside config.js or any frontend file.
-- The OpenAI key must stay inside Supabase Secrets only.
-- Run supabase-real-tables-setup.sql if you use Supabase tables.
+Optional:
+   supabase secrets set GEMINI_MODEL=gemini-1.5-flash
 
-FIX NOTE:
-This version prevents the browser localStorage quota error by not caching uploaded files/PDFs/images inside localStorage. Files remain available through the app state and Supabase.
+Files:
+- config.js contains your Supabase URL / anon publishable key / function endpoint.
+- supabase/functions/analyze-brief/index.ts contains the Gemini function.
+- README_GEMINI_SETUP.txt contains setup steps.

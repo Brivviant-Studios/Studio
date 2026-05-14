@@ -92,6 +92,7 @@
         <label>Tags<input id="taskTags" placeholder="Design, 3D, Client" /></label>
       </div>
       <label>Details<textarea id="taskNotes" rows="4"></textarea></label>
+      <div class="elements-panel" id="taskElementsPanel"><h3>العناصر المطلوبة</h3><div id="taskElementsView" class="elements-box empty">لم يتم استخراج عناصر بعد</div></div>
       <label id="delayReasonWrap" class="hidden">سبب التأخير<textarea id="taskDelayReason" rows="3" placeholder="سبب التأخير أصبح من My Tasks فقط"></textarea></label>
       <label>Attach Images / PDF<input id="taskFiles" type="file" multiple accept="image/*,.pdf" /></label>
       <div id="taskAttachmentsPreview" class="attachments-grid"></div>
@@ -148,7 +149,7 @@
       <div class="ai-actions-row">
         <button type="button" id="analyzeBriefBtn">Analyze PDF</button>
         <button type="button" id="copyBriefBtn">Copy Summary</button>
-        <button type="button" id="convertBriefTasksBtn" class="admin-only">Convert to Tasks</button>
+        <button type="button" id="saveBriefElementsBtn">حفظ العناصر داخل الكارت</button>
       </div>
       <div id="aiBriefStatus" class="ai-status"></div>
       <div id="aiBriefOutput" class="ai-output empty">ارفع PDF واضغط Analyze PDF لاستخراج العناصر المطلوبة من العميل.</div>

@@ -1,9 +1,11 @@
 // Brivviant Studio — Supabase Edge Function: analyze-brief
-// Purpose: Upload a PDF brief / كراسة الشروط and extract the required design elements using AI.
-// Deploy command:
+// Gemini version: reads a PDF brief / كراسة الشروط and extracts design elements.
+// Deploy:
 //   supabase functions deploy analyze-brief --no-verify-jwt
-// Secret command:
-//   supabase secrets set OPENAI_API_KEY=sk-...
+// Secrets:
+//   supabase secrets set GEMINI_API_KEY=your_google_ai_studio_key
+// Optional:
+//   supabase secrets set GEMINI_MODEL=gemini-1.5-flash
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,38 +24,38 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed. Use POST only.' }, 405);
 
   try {
-    const apiKey = Deno.env.get('OPENAI_API_KEY');
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) {
       return json({
-        error: 'OPENAI_API_KEY is missing in Supabase Edge Function Secrets.',
-        fix: 'Run: supabase secrets set OPENAI_API_KEY=sk-your-key'
+        error: 'GEMINI_API_KEY is missing in Supabase Edge Function Secrets.',
+        fix: 'Run: supabase secrets set GEMINI_API_KEY=your-google-ai-studio-key'
       }, 500);
     }
 
     const payload = (await req.json()) as Payload;
     const base64 = payload.pdf?.base64 || '';
     if (!base64) return json({ error: 'PDF base64 is required.' }, 400);
-
-    // Hard limit to avoid Edge Function payload problems. 12MB base64 ≈ 9MB PDF.
     if (base64.length > 12_000_000) {
-      return json({ error: 'PDF is too large. Please upload a PDF under about 9 MB, or split the brief.' }, 413);
+      return json({ error: 'PDF is too large. Upload a PDF under about 9 MB, or split the brief.' }, 413);
     }
 
-    const pdfName = payload.pdf?.name || 'brief.pdf';
+    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-1.5-flash';
     const taskTitle = payload.task?.title || 'Untitled task';
     const eventName = payload.task?.event || 'No event';
 
     const prompt = `
 أنت AI Bot داخل نظام Brivviant Studio لإدارة تاسكات فعاليات واستوديو تصميم.
-ستقرأ PDF كراسة شروط / Brief وتستخرج فقط العناصر المطلوب تصميمها أو تنفيذها من العميل.
+مهمتك قراءة PDF كراسة شروط / Brief واستخراج العناصر المطلوب تصميمها أو تنفيذها فقط، ثم إرجاع JSON صالح فقط.
 
 قواعد صارمة:
 - لا تخترع أي عنصر غير موجود في PDF.
-- لو في نقطة غير واضحة اكتبها ضمن missing_questions.
-- ركز على العناصر التصميمية والتنفيذية: بوابات، باك دروب، كاونترات، شاشات، منصات، مناطق تفاعلية، مجسمات، طباعة، ستاندات، signage، production، installation.
+- لا تنشئ Tasks جديدة.
+- التحليل سيتم حفظه داخل نفس الكارت في خانة العناصر.
+- ركز على عناصر الفعاليات والتصميم: بوابات، backdrops، counters، photo booth، wheel of fortune، screens، stages، signage، furniture، printing zones، kids zones، production، installation.
 - استخرج المقاسات والكميات والخامات والمواعيد لو موجودة.
-- اكتب بالعربية الواضحة، واترك المصطلحات الإنجليزية كما هي لو ظهرت في الكراسة.
-- رجّع JSON فقط، بدون Markdown أو شرح خارجي.
+- لو في نقطة ناقصة أو غير واضحة، ضعها في missing_questions.
+- اكتب بالعربية الواضحة مع إبقاء المصطلحات الإنجليزية كما هي.
+- رجّع JSON فقط بدون Markdown.
 
 Task context:
 - Task title: ${taskTitle}
@@ -77,37 +79,33 @@ JSON schema المطلوب:
   "raw": "ملاحظات إضافية مختصرة"
 }`;
 
-    const openaiRes = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        input: [{
-          role: 'user',
-          content: [
-            { type: 'input_text', text: prompt },
-            { type: 'input_file', filename: pdfName, file_data: `data:application/pdf;base64,${base64}` }
-          ]
-        }],
-        temperature: 0.1
-      }),
-    });
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: 'application/pdf', data: base64 } }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json'
+          }
+        })
+      }
+    );
 
-    const data = await openaiRes.json().catch(() => ({}));
-    if (!openaiRes.ok) {
-      return json({
-        error: data?.error?.message || `OpenAI API error ${openaiRes.status}`,
-        details: data
-      }, openaiRes.status);
+    const data = await geminiRes.json().catch(() => ({}));
+    if (!geminiRes.ok) {
+      return json({ error: data?.error?.message || `Gemini API error ${geminiRes.status}`, details: data }, geminiRes.status);
     }
 
-    const outputText = data.output_text
-      || data.output?.flatMap((o: any) => o.content || []).map((c: any) => c.text || '').join('\n')
-      || '';
-
+    const outputText = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('\n') || '';
     let analysis: unknown;
     try {
       const cleaned = outputText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
@@ -116,7 +114,7 @@ JSON schema المطلوب:
       analysis = { summary: 'تم التحليل، لكن الرد لم يرجع JSON صالح بالكامل.', raw: outputText };
     }
 
-    return json({ ok: true, analysis });
+    return json({ ok: true, provider: 'gemini', analysis });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }

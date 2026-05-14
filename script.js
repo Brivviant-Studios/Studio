@@ -18,8 +18,8 @@ function userFromDb(r){return {id:r.id,name:r.name||'',nickname:r.nickname||'',u
 function userToDb(u){return {id:u.id,name:u.name||'',nickname:u.nickname||'',username:u.username||'',password:u.password||'',email:u.email||'',role:normalizeRole(u.role),avatar:u.avatar||''}}
 function eventFromDb(r){return {id:r.id,name:r.name||'',client:r.client||'',date:r.event_date||'',notes:r.notes||''}}
 function eventToDb(e){return {id:e.id,name:e.name||'',client:e.client||'',event_date:e.date||null,notes:e.notes||''}}
-function taskFromDb(r){return {id:r.id,eventId:r.event_id,title:r.title||'',column:r.column_id||'todo',owner:r.owner||'',ownerName:r.owner_name||'',priority:r.priority||'Normal',due:r.due||'',tags:r.tags||'',notes:r.notes||'',delayReason:r.delay_reason||'',attachments:Array.isArray(r.attachments)?r.attachments:[],aiBriefAnalysis:r.ai_brief_analysis||null,aiBriefPdfName:r.ai_brief_pdf_name||'',aiBriefAnalyzedAt:r.ai_brief_analyzed_at||'',driveLink:r.drive_link||''}}
-function taskToDb(t){return {id:t.id,event_id:t.eventId||null,title:t.title||'',column_id:t.column||'todo',owner:t.owner||'',owner_name:t.ownerName||'',priority:t.priority||'Normal',due:t.due||null,tags:t.tags||'',notes:t.notes||'',delay_reason:t.delayReason||'',attachments:t.attachments||[],ai_brief_analysis:t.aiBriefAnalysis||null,ai_brief_pdf_name:t.aiBriefPdfName||null,ai_brief_analyzed_at:t.aiBriefAnalyzedAt||null,drive_link:t.driveLink||'',updated_at:new Date().toISOString()}}
+function taskFromDb(r){return {id:r.id,eventId:r.event_id,title:r.title||'',column:r.column_id||'todo',owner:r.owner||'',ownerName:r.owner_name||'',priority:r.priority||'Normal',due:r.due||'',tags:r.tags||'',notes:r.notes||'',delayReason:r.delay_reason||'',attachments:Array.isArray(r.attachments)?r.attachments:[],aiBriefAnalysis:r.ai_brief_analysis||null,designElements:Array.isArray(r.design_elements)?r.design_elements:[],aiBriefPdfName:r.ai_brief_pdf_name||'',aiBriefAnalyzedAt:r.ai_brief_analyzed_at||'',driveLink:r.drive_link||''}}
+function taskToDb(t){return {id:t.id,event_id:t.eventId||null,title:t.title||'',column_id:t.column||'todo',owner:t.owner||'',owner_name:t.ownerName||'',priority:t.priority||'Normal',due:t.due||null,tags:t.tags||'',notes:t.notes||'',delay_reason:t.delayReason||'',attachments:t.attachments||[],ai_brief_analysis:t.aiBriefAnalysis||null,design_elements:t.designElements||[],ai_brief_pdf_name:t.aiBriefPdfName||null,ai_brief_analyzed_at:t.aiBriefAnalyzedAt||null,drive_link:t.driveLink||'',updated_at:new Date().toISOString()}}
 function logFromDb(r){return {id:r.id,action:r.action||'',details:r.details||'',target:r.target||'',actor:r.actor||'',username:r.username||'',role:r.role||'',createdAt:r.created_at||'',createdAtText:r.created_at?new Date(r.created_at).toLocaleString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}):''}}
 function logToDb(l){return {id:l.id,action:l.action,details:l.details,target:l.target,actor:l.actor,username:l.username,role:l.role,created_at:l.createdAt||new Date().toISOString()}}
 async function initDb(){
@@ -77,7 +77,8 @@ function getSafeLocalState(){
     tasks: (state.tasks || []).map(t => ({
       ...t,
       attachments: [],
-      aiBriefAnalysis: t.aiBriefAnalysis ? String(t.aiBriefAnalysis).slice(0, 3000) : null
+      aiBriefAnalysis: t.aiBriefAnalysis ? String(t.aiBriefAnalysis).slice(0, 3000) : null,
+      designElements: t.designElements || []
     })),
     logs: (state.logs || []).slice(0, 200)
   };
@@ -120,7 +121,18 @@ function renderBoard(){
   $$('.task-card').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-ai-brief]'))return;openTask(el.dataset.id)}); $$('#kanbanBoard [data-ai-brief]').forEach(b=>b.onclick=e=>{e.stopPropagation();openAiBrief(b.dataset.aiBrief)});
 }
 function priorityClass(p){p=String(p||'').toLowerCase();return p==='urgent'?'urgent':p==='high'?'high':''}
-function taskCard(t){const atts=t.attachments||[];return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>Event</small><b>${safe(getEventName(t.eventId))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${a.data}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div>${t.driveLink?`<div class="task-drive"><small>Drive</small><a href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a></div>`:''}<div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
+function renderDesignElements(elements,compact=false){
+  const list=Array.isArray(elements)?elements.filter(Boolean):[];
+  if(!list.length)return '';
+  const shown=compact?list.slice(0,3):list;
+  return `<div class="elements-box"><div class="elements-title">العناصر المطلوبة</div>${shown.map(el=>{
+    const name=typeof el==='string'?el:(el.name||el.title||'عنصر');
+    const desc=typeof el==='string'?'':(el.description||el.notes||'');
+    const extra=typeof el==='string'?'':[el.quantity,el.dimensions].filter(Boolean).join(' • ');
+    return `<div class="element-row"><b>${safe(name)}</b>${extra?`<small>${safe(extra)}</small>`:''}${(!compact&&desc)?`<p>${safe(desc)}</p>`:''}</div>`;
+  }).join('')}${compact&&list.length>3?`<small class="more-elements">+ ${list.length-3} عناصر أخرى</small>`:''}</div>`;
+}
+function taskCard(t){const atts=t.attachments||[];return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>Event</small><b>${safe(getEventName(t.eventId))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${renderDesignElements(t.designElements,true)}${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${a.data}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div>${t.driveLink?`<div class="task-drive"><small>Drive</small><a href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a></div>`:''}<div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
 function renderMyTasks(){
   const u=currentUser();
   const list=$('#myTasksList');
@@ -134,6 +146,7 @@ function renderMyTasks(){
         <div class="main-title">${safe(t.title)}</div>
         <p>${safe(getEventName(t.eventId))}</p>
         ${t.notes?`<div class="mytask-notes">${safe(t.notes)}</div>`:''}
+        ${renderDesignElements(t.designElements,true)}
       </div>
       <div class="cell"><small>Status</small><b>${status}</b></div>
       <div class="cell"><small>Due</small><b>${safe(t.due||'-')}</b></div>
@@ -185,6 +198,16 @@ function renderEvents(){const grid=$('#eventsGrid'); grid.innerHTML=state.events
 function renderTeam(){const grid=$('#teamGrid'); grid.innerHTML=state.users.map(u=>`<article class="person-card"><h3>${safe(u.nickname||u.name)}</h3><p>@${safe(u.username)} — ${safe(u.role)}</p><p>${safe(u.email||'')}</p><button data-edit-user="${u.id}">Edit</button></article>`).join(''); grid.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>openAccount(b.dataset.editUser))}
 function renderLogs(){const list=$('#logsList'); if(!list)return; list.innerHTML=state.logs.map(l=>`<div class="log-card"><b>${safe(l.action)}</b><span>${safe(l.actor)}<br><small>@${safe(l.username)}</small></span><p>${safe(l.details)} ${l.target?`<small>— ${safe(l.target)}</small>`:''}</p><small>${safe(l.createdAtText)}</small></div>`).join('')||`<div class="empty">No logs yet</div>`}
 
+
+function normalizeDesignElements(analysis){
+  const src=analysis?.required_elements||analysis?.design_elements||analysis?.elements||[];
+  if(Array.isArray(src)) return src.map(x=>{
+    if(typeof x==='string') return {name:x,description:'',quantity:'',dimensions:'',notes:''};
+    return {name:String(x.name||x.title||x.element||'عنصر'),description:String(x.description||''),quantity:String(x.quantity||''),dimensions:String(x.dimensions||x.size||''),notes:String(x.notes||'')};
+  }).filter(x=>x.name&&x.name!=='عنصر');
+  if(typeof src==='string') return src.split(/\n|،|,/).map(x=>x.trim()).filter(Boolean).map(x=>({name:x,description:'',quantity:'',dimensions:'',notes:''}));
+  return [];
+}
 function briefAnalysisToHtml(analysis){
   if(!analysis) return '<div class="empty">لا يوجد تحليل محفوظ لهذا الكارت.</div>';
   const esc=safe;
@@ -233,16 +256,17 @@ async function analyzeBrief(){
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||data.message||`API Error ${res.status}`);
     task.aiBriefAnalysis=data.analysis||data;
+    task.designElements=normalizeDesignElements(task.aiBriefAnalysis);
     task.aiBriefPdfName=pendingAiPdf.name;
     task.aiBriefAnalyzedAt=new Date().toISOString();
     saveState(); await dbUpsertTask(task); log('AI Brief Analysis',pendingAiPdf.name,task.title);
     $('#aiBriefOutput').classList.remove('empty');
     $('#aiBriefOutput').innerHTML=briefAnalysisToHtml(task.aiBriefAnalysis);
-    $('#aiBriefStatus').textContent='تم استخراج شرح العناصر وحفظه داخل الكارت.';
+    $('#aiBriefStatus').textContent='تم استخراج العناصر المطلوبة وحفظها داخل خانة العناصر في نفس الكارت.';
     render();
   }catch(err){
     const msg=(err instanceof TypeError && String(err.message).includes('Failed to fetch'))
-      ? 'فشل التحليل: Failed to fetch — الحل: Deploy للـ Edge Function باسم analyze-brief مع verify_jwt=false، ثم إضافة OPENAI_API_KEY في Secrets. افتح README_AI_SETUP.txt واتبع الخطوات حرفيًا.'
+      ? 'فشل التحليل: Failed to fetch — الحل: Deploy للـ Edge Function باسم analyze-brief مع verify_jwt=false، ثم إضافة GEMINI_API_KEY في Secrets. افتح README_GEMINI_SETUP.txt واتبع الخطوات حرفيًا.'
       : 'فشل التحليل: '+err.message;
     $('#aiBriefStatus').textContent=msg;
   }finally{$('#analyzeBriefBtn').disabled=false;}
@@ -252,18 +276,23 @@ function copyBrief(){
   const text=typeof t.aiBriefAnalysis==='string'?t.aiBriefAnalysis:JSON.stringify(t.aiBriefAnalysis,null,2);
   navigator.clipboard?.writeText(text); $('#aiBriefStatus').textContent='تم نسخ التحليل.';
 }
-async function convertBriefToTasks(){
-  const t=state.tasks.find(x=>x.id===$('#aiBriefTaskId').value); if(!t?.aiBriefAnalysis)return;
-  const items=Array.isArray(t.aiBriefAnalysis.required_elements)?t.aiBriefAnalysis.required_elements:[];
-  if(!items.length){$('#aiBriefStatus').textContent='لا توجد عناصر واضحة لتحويلها إلى Tasks.';return}
-  for(const item of items){const nt={id:uid(),eventId:t.eventId,title:String(item).slice(0,120),column:'todo',owner:t.owner,ownerName:t.ownerName,priority:'Normal',due:t.due,tags:'AI Brief',notes:`Generated from AI Brief Analysis of: ${t.title}`,attachments:[]}; state.tasks.push(nt); await dbUpsertTask(nt)}
-  saveState(); log('Convert AI Brief To Tasks',`${items.length} tasks created`,t.title); $('#aiBriefStatus').textContent=`تم إنشاء ${items.length} Tasks من شرح العناصر.`; render();
+async function saveBriefElementsOnly(){
+  const t=state.tasks.find(x=>x.id===$('#aiBriefTaskId').value);
+  if(!t?.aiBriefAnalysis){$('#aiBriefStatus').textContent='حلل PDF الأول.';return}
+  t.designElements=normalizeDesignElements(t.aiBriefAnalysis);
+  saveState();
+  try{await dbUpsertTask(t)}catch(err){alert('Database Error: '+err.message);return}
+  $('#aiBriefStatus').textContent='تم حفظ العناصر داخل نفس الكارت.';
+  log('Save Brief Elements',`${t.designElements.length} elements saved`,t.title);
+  render();
 }
+
 
 function switchTab(tab){$$('.tab').forEach(s=>s.classList.toggle('active',s.id===tab));$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$('#pageTitle').textContent=$(`.nav-btn[data-tab="${tab}"]`)?.textContent||tab}
 function openTask(id=''){
   const t=state.tasks.find(x=>x.id===id)||null; pendingFiles=[]; $('#taskId').value=t?.id||''; $('#taskTitle').value=t?.title||''; $('#taskEvent').value=t?.eventId||state.events[0]?.id||''; $('#taskColumn').value=t?.column||'todo'; $('#taskOwner').value=t?.owner||currentUser()?.id||''; $('#taskPriority').value=t?.priority||'Normal'; $('#taskDue').value=t?.due||''; $('#taskTags').value=t?.tags||''; $('#taskNotes').value=t?.notes||''; $('#taskDelayReason').value=t?.delayReason||''; $('#deleteTaskBtn').classList.toggle('hidden',!t||!isAdmin());
   $('#delayReasonWrap').classList.add('hidden'); $('#taskDelayReason').disabled=true;
+  const ev=$('#taskElementsView'); if(ev){ev.classList.toggle('empty',!(t?.designElements||[]).length); ev.innerHTML=renderDesignElements(t?.designElements||[],false)||'لم يتم استخراج عناصر بعد';}
   renderAttachmentPreview(t?.attachments||[]); $('#taskDialog').showModal();
 }
 function renderAttachmentPreview(atts){const wrap=$('#taskAttachmentsPreview'); wrap.innerHTML=atts.map(a=>`<div class="attachment-card" data-att="${a.id}">${a.type?.startsWith('image/')?`<img src="${a.data}" alt="">`:`<div class="pdf-chip">PDF</div>`}<a href="${a.data}" download="${safe(a.name)}">تحميل ${safe(a.name)}</a>${isAdmin()?`<button type="button" data-del-att="${a.id}">حذف</button>`:''}</div>`).join(''); wrap.querySelectorAll('[data-del-att]').forEach(b=>b.onclick=()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); if(t){t.attachments=(t.attachments||[]).filter(a=>a.id!==b.dataset.delAtt); log('Delete Attachment',b.dataset.delAtt,t.title); saveState(); dbUpsertTask(t); renderAttachmentPreview(t.attachments); render();}})}
@@ -287,7 +316,7 @@ function bind(){
   $('#addPersonBtn').onclick=()=>openAccount(); $('#accountForm').onsubmit=saveAccount; $('#cancelAccountBtn').onclick=()=>$('#accountDialog').close(); $('#deleteAccountBtn').onclick=async()=>{const id=$('#accountId').value;const u=state.users.find(x=>x.id===id); if(u&&confirm('حذف الحساب؟')){state.users=state.users.filter(x=>x.id!==id); saveState(); try{await dbDelete('studio_users',id)}catch(err){alert('Database Error: '+err.message);return} log('Delete Account',u.username); $('#accountDialog').close();render()}}; $('#generatePasswordBtn').onclick=()=>{$('#accountPassword').value='Bv@'+Math.random().toString(36).slice(2,10)};
   $('#profileForm').onsubmit=saveProfile; $('#cancelProfileBtn').onclick=()=>$('#profileDialog').close(); $('#profileImage').onchange=async e=>{const f=e.target.files[0]; if(f){const d=await fileToData(f); pendingProfileAvatar=d.data; $('#avatarPreview').innerHTML=`<img src="${pendingProfileAvatar}">`}};
   $('#aiBriefPdf').onchange=async e=>{const f=e.target.files[0]; if(!f)return; if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf'){ $('#aiBriefStatus').textContent='الملف لازم يكون PDF.'; return } pendingAiPdf=await fileToData(f); $('#aiBriefStatus').textContent='تم رفع PDF: '+f.name};
-  $('#analyzeBriefBtn').onclick=analyzeBrief; $('#copyBriefBtn').onclick=copyBrief; $('#convertBriefTasksBtn').onclick=convertBriefToTasks; $('#closeAiBriefBtn').onclick=()=>$('#aiBriefDialog').close();
+  $('#analyzeBriefBtn').onclick=analyzeBrief; $('#copyBriefBtn').onclick=copyBrief; const saveEls=$('#saveBriefElementsBtn'); if(saveEls) saveEls.onclick=saveBriefElementsOnly; $('#closeAiBriefBtn').onclick=()=>$('#aiBriefDialog').close();
   $('#searchInput').oninput=renderBoard; $('#eventFilter').onchange=renderBoard; $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='brivviant-studio-events-state.json';a.click();URL.revokeObjectURL(a.href);log('Export JSON','State exported')}; $('#importInput').onchange=e=>{const f=e.target.files[0];if(!f)return; const r=new FileReader();r.onload=()=>{state=JSON.parse(r.result);saveState();log('Import JSON','State imported');render()};r.readAsText(f)};
 }
 async function boot(){bind(); await initDb(); if(getSession()) $('#loginOverlay').classList.add('hidden'); render()}
