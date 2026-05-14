@@ -68,7 +68,28 @@ function loadState(){
   if(!base.events.length) base.events.push({id:'evt-demo',name:'Internal Studio Event',client:'Brivviant',date:today(),notes:''});
   return base;
 }
-function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
+function getSafeLocalState(){
+  // Keep the browser cache small. Large uploaded files/images/PDFs are kept in Supabase/state memory,
+  // but not duplicated into localStorage because browsers usually allow only ~5MB.
+  return {
+    events: state.events || [],
+    users: (state.users || []).map(u => ({...u, avatar: ''})),
+    tasks: (state.tasks || []).map(t => ({
+      ...t,
+      attachments: [],
+      aiBriefAnalysis: t.aiBriefAnalysis ? String(t.aiBriefAnalysis).slice(0, 3000) : null
+    })),
+    logs: (state.logs || []).slice(0, 200)
+  };
+}
+function saveState(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getSafeLocalState()));
+  }catch(err){
+    console.warn('Local cache skipped because browser storage is full:', err);
+    try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+  }
+}
 function getSession(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch(e){return null}}
 function setSession(u){localStorage.setItem(SESSION_KEY,JSON.stringify({id:u.id,username:u.username,role:u.role,name:u.name}))}
 function clearSession(){localStorage.removeItem(SESSION_KEY)}

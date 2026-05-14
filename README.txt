@@ -35,3 +35,6 @@ Important:
 - Do not put the OpenAI API key inside config.js or any frontend file.
 - The OpenAI key must stay inside Supabase Secrets only.
 - Run supabase-real-tables-setup.sql if you use Supabase tables.
+
+FIX NOTE:
+This version prevents the browser localStorage quota error by not caching uploaded files/PDFs/images inside localStorage. Files remain available through the app state and Supabase.
