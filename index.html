@@ -92,7 +92,7 @@
         <label>Tags<input id="taskTags" placeholder="Design, 3D, Client" /></label>
       </div>
       <label>Details<textarea id="taskNotes" rows="4"></textarea></label>
-      <label id="delayReasonWrap">سبب التأخير<textarea id="taskDelayReason" rows="3" placeholder="يظهر ويتعدل لصاحب التاسك فقط عند التأخير"></textarea></label>
+      <label id="delayReasonWrap" class="hidden">سبب التأخير<textarea id="taskDelayReason" rows="3" placeholder="سبب التأخير أصبح من My Tasks فقط"></textarea></label>
       <label>Attach Images / PDF<input id="taskFiles" type="file" multiple accept="image/*,.pdf" /></label>
       <div id="taskAttachmentsPreview" class="attachments-grid"></div>
       <div class="dialog-actions">
@@ -167,6 +167,7 @@
     </form>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="script.js"></script>
 </body>

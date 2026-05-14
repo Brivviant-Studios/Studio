@@ -16,3 +16,18 @@
 .task-actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}
 .horizontal-card .row-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:980px){.ai-actions-row,.horizontal-card .row-actions{display:grid;grid-template-columns:1fr}.ai-output{max-height:60vh}}
+
+/* My Tasks delivery workflow */
+.mytask-card{grid-template-columns:minmax(240px,1.2fr) repeat(4,minmax(105px,.45fr)) minmax(320px,1.25fr);align-items:start}
+.mytask-main p{margin:6px 0;color:var(--muted)}
+.mytask-notes{margin-top:8px;font-size:12px;line-height:1.65;color:#cdeade;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:9px}
+.mytask-actions-panel{display:grid;gap:9px;align-self:stretch}
+.inline-field{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:800}
+.inline-field input,.inline-field textarea{width:100%;min-width:0;border-radius:14px;padding:10px 12px;border:1px solid var(--line);background:rgba(0,0,0,.18);color:var(--text);outline:none;resize:vertical}
+.delay-field textarea{border-color:rgba(255,111,111,.28);background:rgba(255,111,111,.06)}
+.done-btn{background:linear-gradient(135deg,rgba(142,241,182,.30),rgba(142,241,182,.13));border-color:rgba(142,241,182,.45);color:var(--text);font-weight:900}
+.task-drive{margin-top:8px;border:1px solid rgba(142,241,182,.20);background:rgba(142,241,182,.06);border-radius:14px;padding:9px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.task-drive small{color:var(--muted)}
+.task-drive a{color:var(--mint);text-decoration:none;font-weight:900;font-size:12px;word-break:break-all}
+@media(max-width:1350px){.mytask-card{grid-template-columns:1fr 1fr}.mytask-actions-panel{grid-column:1/-1}}
+@media(max-width:760px){.mytask-card{grid-template-columns:1fr}.mytask-actions-panel{grid-column:auto}}
