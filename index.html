@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brivviant Studio Events Tasks</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-orb orb-1"></div><div class="bg-orb orb-2"></div>
+
+  <aside class="sidebar">
+    <img src="assets/brivviant-logo.png" class="logo" alt="Brivviant Studios" />
+    <div class="brand-kicker">Studio Events Tasks</div>
+    <nav>
+      <button class="nav-btn active" data-tab="board">Event Board</button>
+      <button class="nav-btn" data-tab="mytasks">My Tasks</button>
+      <button class="nav-btn admin-only" data-tab="events">Events</button>
+      <button class="nav-btn admin-only" data-tab="team">Team</button>
+      <button class="nav-btn admin-only" data-tab="logs">Log</button>
+    </nav>
+    <div class="mini-stats">
+      <div><span id="statTasks">0</span><small>Tasks</small></div>
+      <div><span id="statDone">0</span><small>Done</small></div>
+      <div><span id="statLate">0</span><small>Late</small></div>
+    </div>
+    <button id="logoutBtn" class="logout-btn">Logout</button>
+    <div id="syncState" class="sync-state">Local Ready</div>
+  </aside>
+
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1 id="pageTitle">Event Board</h1>
+        <p>إدارة التاسكات الداخلية للستوديو والفعاليات بنفس UI بريفيانت.</p>
+      </div>
+      <div class="actions">
+        <div id="profileBar" class="profile-bar"></div>
+        <input id="searchInput" placeholder="بحث سريع..." />
+        <button id="exportBtn" class="admin-only">Export JSON</button>
+        <label class="importLabel admin-only">Import<input id="importInput" type="file" accept=".json" hidden></label>
+      </div>
+    </header>
+
+    <section id="board" class="tab active">
+      <div class="section-head">
+        <h2>لوحة الفعاليات</h2>
+        <div class="inline-actions">
+          <select id="eventFilter"></select>
+          <button id="addTaskBtn" class="admin-only">+ Task Card</button>
+        </div>
+      </div>
+      <div id="kanbanBoard" class="kanban-board"></div>
+    </section>
+
+    <section id="mytasks" class="tab">
+      <div class="section-head"><h2>My Tasks</h2><span class="muted">التاسكات الخاصة بالحساب الحالي فقط</span></div>
+      <div id="myTasksList" class="horizontal-list"></div>
+    </section>
+
+    <section id="events" class="tab">
+      <div class="section-head"><h2>الفعاليات</h2><button id="addEventBtn">+ إضافة فعالية</button></div>
+      <div id="eventsGrid" class="event-grid"></div>
+    </section>
+
+    <section id="team" class="tab">
+      <div class="section-head"><h2>الفريق والحسابات</h2><button id="addPersonBtn">+ إضافة حساب</button></div>
+      <div id="teamGrid" class="team-grid"></div>
+    </section>
+
+    <section id="logs" class="tab">
+      <div class="section-head"><h2>Activity Log</h2><span class="muted">كل حركة بالتاريخ والساعة</span></div>
+      <div id="logsList" class="logs-list"></div>
+    </section>
+  </main>
+
+  <dialog id="taskDialog">
+    <form method="dialog" id="taskForm">
+      <h2 id="taskDialogTitle">Task Card</h2>
+      <input type="hidden" id="taskId" />
+      <div class="two-col">
+        <label>الفعالية<select id="taskEvent" required></select></label>
+        <label>Column<select id="taskColumn"></select></label>
+      </div>
+      <label>Task Title<input id="taskTitle" required placeholder="مثال: تصميم بوابة الدخول" /></label>
+      <div class="two-col">
+        <label>Assigned To<select id="taskOwner" required></select></label>
+        <label>Priority<select id="taskPriority"><option>Normal</option><option>High</option><option>Urgent</option></select></label>
+      </div>
+      <div class="two-col">
+        <label>Due Date<input id="taskDue" type="date" /></label>
+        <label>Tags<input id="taskTags" placeholder="Design, 3D, Client" /></label>
+      </div>
+      <label>Details<textarea id="taskNotes" rows="4"></textarea></label>
+      <label id="delayReasonWrap">سبب التأخير<textarea id="taskDelayReason" rows="3" placeholder="يظهر ويتعدل لصاحب التاسك فقط عند التأخير"></textarea></label>
+      <label>Attach Images / PDF<input id="taskFiles" type="file" multiple accept="image/*,.pdf" /></label>
+      <div id="taskAttachmentsPreview" class="attachments-grid"></div>
+      <div class="dialog-actions">
+        <button type="button" id="deleteTaskBtn" class="danger admin-only">حذف</button><span></span>
+        <button type="button" id="cancelTaskBtn">إلغاء</button><button id="saveTaskBtn">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="eventDialog">
+    <form method="dialog" id="eventForm">
+      <h2>إضافة / تعديل فعالية</h2>
+      <input type="hidden" id="eventId" />
+      <label>اسم الفعالية<input id="eventName" required /></label>
+      <div class="two-col"><label>Client<input id="eventClient" /></label><label>Date<input id="eventDate" type="date" /></label></div>
+      <label>Notes<textarea id="eventNotes" rows="3"></textarea></label>
+      <div class="dialog-actions"><button type="button" id="deleteEventBtn" class="danger">حذف</button><span></span><button type="button" id="cancelEventBtn">إلغاء</button><button id="saveEventBtn">حفظ</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="accountDialog">
+    <form method="dialog" id="accountForm">
+      <h2>حساب الفريق</h2>
+      <input type="hidden" id="accountId" />
+      <div class="two-col"><label>Name<input id="accountName" required /></label><label>Nickname<input id="accountNickname" /></label></div>
+      <div class="two-col"><label>UserName<input id="accountUsername" required /></label><label>Email<input id="accountEmail" type="email" /></label></div>
+      <div class="two-col"><label>Password<input id="accountPassword" required /></label><label>Role<select id="accountRole"><option value="staff">Staff</option><option value="admin">Admin</option></select></label></div>
+      <div class="dialog-actions"><button type="button" id="deleteAccountBtn" class="danger">حذف</button><button type="button" id="generatePasswordBtn">Generate</button><span></span><button type="button" id="cancelAccountBtn">إلغاء</button><button id="saveAccountBtn">حفظ</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="profileDialog">
+    <form method="dialog" id="profileForm">
+      <h2>Profile</h2>
+      <div id="avatarPreview" class="avatar-preview">No Image</div>
+      <label>Profile Image<input id="profileImage" type="file" accept="image/*" /></label>
+      <div class="two-col"><label>Name<input id="profileName" required /></label><label>Nickname<input id="profileNickname" /></label></div>
+      <div class="two-col"><label>UserName<input id="profileUsername" readonly /></label><label>Email<input id="profileEmail" type="email" /></label></div>
+      <label>New Password<input id="profilePassword" placeholder="اتركه فاضي لو مش هتغيره" /></label>
+      <div class="dialog-actions"><span></span><button type="button" id="cancelProfileBtn">إلغاء</button><button id="saveProfileBtn">حفظ</button></div>
+    </form>
+  </dialog>
+
+  <div id="loginOverlay" class="login-overlay">
+    <form id="loginForm" class="login-panel">
+      <img src="assets/brivviant-logo.png" class="login-logo" alt="Brivviant" />
+      <h2>Brivviant Studio Login</h2>
+      <input id="loginUsername" type="text" placeholder="Username" autocomplete="username" />
+      <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
+      <button id="loginBtn" type="submit">Login</button>
+      <div id="loginError" class="login-error"></div>
+    </form>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
