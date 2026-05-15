@@ -13,6 +13,7 @@ let state=loadState();
 let dbClient=null;
 let dbOnline=false;
 function setSync(msg){const el=$('#syncState'); if(el) el.textContent=msg;}
+function withTimeout(promise, ms=9000, label='Request'){return Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label+' timeout')),ms))]);}
 function normalizeRole(r){return String(r||'staff').toLowerCase()==='admin'?'admin':'staff'}
 function userFromDb(r){return {id:r.id,name:r.name||'',nickname:r.nickname||'',username:r.username||'',password:r.password||'',email:r.email||'',role:normalizeRole(r.role),avatar:r.avatar||''}}
 function userToDb(u){return {id:u.id,name:u.name||'',nickname:u.nickname||'',username:u.username||'',password:u.password||'',email:u.email||'',role:normalizeRole(u.role),avatar:u.avatar||''}}
@@ -27,7 +28,7 @@ async function initDb(){
   if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY||!window.supabase){setSync('Local Mode');return false;}
   dbClient=window.supabase.createClient(cfg.SUPABASE_URL.replace(/\/rest\/v1\/?$/,'').replace(/\/$/,''),cfg.SUPABASE_ANON_KEY);
   dbOnline=true; setSync('Supabase Connecting...');
-  try{await loadRemoteState(); setSync('Supabase Ready'); return true;}catch(err){console.error(err); dbOnline=false; setSync('Supabase Error - Local Mode'); return false;}
+  try{await withTimeout(loadRemoteState(),9000,'Supabase'); setSync('Supabase Ready'); return true;}catch(err){console.error(err); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode'); return false;}
 }
 async function loadRemoteState(){
   if(!dbClient)return;
@@ -100,8 +101,39 @@ function isTaskOwner(t){const u=currentUser(); if(!u||!t)return false; return [u
 function isLate(t){return t.column==='late'||(t.due&&t.due<today()&&t.column!=='done')}
 function log(action,details='',target=''){const entry={id:uid(),action,details,target,actor:currentUser()?.name||'Unknown',username:currentUser()?.username||'',role:currentUser()?.role||'',createdAt:new Date().toISOString(),createdAtText:nowText()};state.logs.unshift(entry);state.logs=state.logs.slice(0,1000);saveState();dbInsertLog(entry);renderLogs()}
 function fileToData(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({id:uid(),name:file.name,type:file.type||'application/octet-stream',size:file.size,data:r.result,createdAt:new Date().toISOString(),createdBy:currentUser()?.username||''});r.onerror=rej;r.readAsDataURL(file)})}
-function render(){applyPermissions();renderProfile();renderFilters();renderBoard();renderMyTasks();renderEvents();renderTeam();renderLogs();renderStats()}
-function applyPermissions(){const admin=isAdmin();$$('.admin-only').forEach(el=>el.classList.toggle('hidden',!admin)); if(!admin&&$('#board').classList.contains('active')) switchTab('mytasks')}
+
+function renderDashboard(){
+  const grid=$('#dashboardGrid'); if(!grid)return;
+  const tasks=state.tasks||[], events=state.events||[], users=state.users||[];
+  const late=tasks.filter(isLate).length, done=tasks.filter(t=>t.column==='done').length, review=tasks.filter(t=>t.column==='review').length, active=tasks.filter(t=>t.column!=='done').length;
+  grid.innerHTML=[
+    ['Total Tasks',tasks.length,'كل التاسكات'],['Active',active,'لسه شغالة'],['Review',review,'محتاج مراجعة'],['Done',done,'تم الانتهاء'],['Late',late,'متأخر'],['Events',events.length,'فعاليات'],['Team',users.length,'حسابات']
+  ].map(x=>`<div class="dash-card"><small>${x[0]}</small><b>${x[1]}</b><span>${x[2]}</span></div>`).join('');
+  const lateWrap=$('#lateTasksPanel'); if(lateWrap){
+    const list=tasks.filter(t=>isLate(t)||String(t.priority).toLowerCase()==='urgent').slice(0,8);
+    lateWrap.innerHTML=list.map(t=>`<button class="dash-row" data-open-dash-task="${t.id}"><b>${safe(t.title)}</b><small>${safe(getUserName(t.owner))} • ${safe(t.due||'-')} • ${safe(t.priority||'Normal')}</small></button>`).join('')||'<div class="empty">لا يوجد مهام متأخرة أو عاجلة</div>';
+    lateWrap.querySelectorAll('[data-open-dash-task]').forEach(b=>b.onclick=()=>openTask(b.dataset.openDashTask));
+  }
+  const logsWrap=$('#recentLogsPanel'); if(logsWrap){
+    logsWrap.innerHTML=(state.logs||[]).slice(0,8).map(l=>`<div class="dash-row static"><b>${safe(l.action)}</b><small>${safe(l.actor)} • ${safe(l.createdAtText)}</small></div>`).join('')||'<div class="empty">لا يوجد نشاط بعد</div>';
+  }
+}
+function makeTempPassword(){return 'Bv@'+Math.random().toString(36).slice(2,10)+Math.floor(10+Math.random()*89)}
+async function resetForgotPassword(e){
+  e.preventDefault();
+  const box=$('#forgotResult'); box.classList.add('hidden'); box.textContent='';
+  if(dbOnline){try{await withTimeout(loadRemoteState(),9000,'Supabase refresh')}catch(err){setSync('Supabase Error - Local Reset');}}
+  const id=$('#forgotIdentity').value.trim().toLowerCase();
+  const u=state.users.find(x=>String(x.username||'').toLowerCase()===id || String(x.email||'').toLowerCase()===id);
+  if(!u){box.classList.remove('hidden'); box.innerHTML='الحساب غير موجود. راجع الـ Username أو Email.'; return;}
+  const temp=makeTempPassword(); u.password=temp; saveState();
+  try{await dbUpsertUser(u)}catch(err){box.classList.remove('hidden'); box.innerHTML='تم التغيير Local فقط، لكن Supabase رفض الحفظ: '+safe(err.message); return;}
+  box.classList.remove('hidden'); box.innerHTML=`Password مؤقت:<br><b>${safe(temp)}</b><br><small>انسخه وسجل دخول، وبعدها غيره من Profile.</small>`;
+  log('Reset Password','Temporary password generated',u.username);
+}
+
+function render(){applyPermissions();renderProfile();renderFilters();renderDashboard();renderBoard();renderMyTasks();renderEvents();renderTeam();renderLogs();renderStats()}
+function applyPermissions(){const admin=isAdmin();$$('.admin-only').forEach(el=>el.classList.toggle('hidden',!admin)); if(!admin&&($('#board').classList.contains('active')||$('#events').classList.contains('active')||$('#team').classList.contains('active')||$('#logs').classList.contains('active'))) switchTab('mytasks')}
 function renderProfile(){const u=currentUser(); const box=$('#profileBar'); if(!u){box.innerHTML='';return} box.innerHTML=`${u.avatar?`<img src="${u.avatar}" alt="">`:`<span class="avatar"></span>`}<div><b>${safe(u.nickname||u.name)}</b><small>${safe(u.role==='admin'?'Admin':'Staff')} — @${safe(u.username)}</small></div>`}
 function renderStats(){const tasks=state.tasks; $('#statTasks').textContent=tasks.length; $('#statDone').textContent=tasks.filter(t=>t.column==='done').length; $('#statLate').textContent=tasks.filter(isLate).length}
 function renderFilters(){
@@ -308,9 +340,24 @@ function openAccount(id=''){const u=state.users.find(x=>x.id===id)||null; $('#ac
 async function saveAccount(e){e.preventDefault(); let u=state.users.find(x=>x.id===$('#accountId').value); const isNew=!u; const username=$('#accountUsername').value.trim(); if(state.users.some(x=>x.username===username && x.id!==$('#accountId').value)){alert('Username موجود بالفعل');return} if(!u){u={id:uid(),avatar:''};state.users.push(u)} u.name=$('#accountName').value; u.nickname=$('#accountNickname').value; u.username=username; u.email=$('#accountEmail').value; u.password=$('#accountPassword').value; u.role=normalizeRole($('#accountRole').value); saveState(); try{await dbUpsertUser(u)}catch(err){alert('Database Error: '+err.message);return} log(isNew?'Create Account':'Update Account',u.username); $('#accountDialog').close();render()}
 function openProfile(){const u=currentUser(); if(!u)return; pendingProfileAvatar=''; $('#profileName').value=u.name||''; $('#profileNickname').value=u.nickname||''; $('#profileUsername').value=u.username||''; $('#profileEmail').value=u.email||''; $('#profilePassword').value=''; $('#avatarPreview').innerHTML=u.avatar?`<img src="${u.avatar}">`:'No Image'; $('#profileDialog').showModal()}
 async function saveProfile(e){e.preventDefault();const u=currentUser(); if(!u)return; u.name=$('#profileName').value; u.nickname=$('#profileNickname').value; u.email=$('#profileEmail').value; if($('#profilePassword').value)u.password=$('#profilePassword').value; if(pendingProfileAvatar)u.avatar=pendingProfileAvatar; saveState(); try{await dbUpsertUser(u)}catch(err){alert('Database Error: '+err.message);return} log('Update Profile',u.username); $('#profileDialog').close();render()}
+
+async function handleLogin(e){
+  e.preventDefault();
+  const err=$('#loginError'), btn=$('#loginBtn');
+  err.textContent=''; btn.disabled=true; const oldText=btn.textContent; btn.textContent='جاري تسجيل الدخول...';
+  try{
+    if(dbClient||dbOnline){try{dbOnline=true; await withTimeout(loadRemoteState(),9000,'Supabase login'); setSync('Supabase Ready')}catch(ex){console.warn(ex); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode')}}
+    const un=$('#loginUsername').value.trim(), pw=$('#loginPassword').value.trim();
+    if(!un||!pw){err.textContent='لازم تدخل Username و Password';return}
+    const u=state.users.find(x=>String(x.username).toLowerCase()===un.toLowerCase()&&String(x.password)===pw);
+    if(!u){err.textContent='Username أو Password غير صحيح. جرب Brivviant / Brivviant@123456 لو أول مرة.';return}
+    setSession(u); $('#loginOverlay').classList.add('hidden'); log('Login','User logged in'); render();
+  } finally {btn.disabled=false; btn.textContent=oldText;}
+}
+
 function bind(){
-  $$('.nav-btn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab)); $('#profileBar').onclick=openProfile; $('#logoutBtn').onclick=()=>{log('Logout','User logged out');clearSession();location.reload()}; $('#loginForm').onsubmit=async e=>{e.preventDefault(); $('#loginError').textContent=''; if(dbOnline){try{await loadRemoteState()}catch(err){$('#loginError').textContent='Database Error: '+err.message;return}} const un=$('#loginUsername').value.trim(), pw=$('#loginPassword').value.trim(); if(!un||!pw){$('#loginError').textContent='لازم تدخل Username و Password';return} const u=state.users.find(x=>String(x.username).toLowerCase()===un.toLowerCase()&&String(x.password)===pw); if(!u){$('#loginError').textContent='Username أو Password غير صحيح أو الحساب غير محفوظ في Supabase';return} setSession(u); $('#loginOverlay').classList.add('hidden'); log('Login','User logged in');render()};
-  $('#addTaskBtn').onclick=()=>openTask(); $('#taskForm').onsubmit=saveTask; $('#cancelTaskBtn').onclick=()=>$('#taskDialog').close(); $('#deleteTaskBtn').onclick=async()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); if(t&&confirm('حذف التاسك؟')){state.tasks=state.tasks.filter(x=>x.id!==id);saveState();try{await dbDelete('studio_event_tasks',id)}catch(err){alert('Database Error: '+err.message);return}log('Delete Task',t.title);$('#taskDialog').close();render()}};
+  $$('.nav-btn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab)); $('#profileBar').onclick=openProfile; $('#logoutBtn').onclick=()=>{log('Logout','User logged out');clearSession();$('#loginOverlay').classList.remove('hidden');render()}; $('#loginForm').onsubmit=handleLogin; $('#forgotPasswordBtn').onclick=()=>{$('#forgotResult').classList.add('hidden');$('#forgotIdentity').value=$('#loginUsername').value||'';$('#forgotDialog').showModal()}; $('#forgotForm').onsubmit=resetForgotPassword; $('#cancelForgotBtn').onclick=()=>$('#forgotDialog').close();
+  $('#quickTaskBtn')&&($('#quickTaskBtn').onclick=()=>openTask()); $('#quickEventBtn')&&($('#quickEventBtn').onclick=()=>openEvent()); $('#addTaskBtn').onclick=()=>openTask(); $('#taskForm').onsubmit=saveTask; $('#cancelTaskBtn').onclick=()=>$('#taskDialog').close(); $('#deleteTaskBtn').onclick=async()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); if(t&&confirm('حذف التاسك؟')){state.tasks=state.tasks.filter(x=>x.id!==id);saveState();try{await dbDelete('studio_event_tasks',id)}catch(err){alert('Database Error: '+err.message);return}log('Delete Task',t.title);$('#taskDialog').close();render()}};
   $('#taskFiles').onchange=async e=>{pendingFiles=await Promise.all([...e.target.files].map(fileToData)); const id=$('#taskId').value; const current=state.tasks.find(t=>t.id===id)?.attachments||[]; renderAttachmentPreview([...current,...pendingFiles])};
   $('#addEventBtn').onclick=()=>openEvent(); $('#eventForm').onsubmit=saveEvent; $('#cancelEventBtn').onclick=()=>$('#eventDialog').close(); $('#deleteEventBtn').onclick=async()=>{const id=$('#eventId').value;if(confirm('حذف الفعالية؟')){state.events=state.events.filter(e=>e.id!==id); saveState(); try{await dbDelete('studio_events',id)}catch(err){alert('Database Error: '+err.message);return} log('Delete Event',id); $('#eventDialog').close();render()}};
   $('#addPersonBtn').onclick=()=>openAccount(); $('#accountForm').onsubmit=saveAccount; $('#cancelAccountBtn').onclick=()=>$('#accountDialog').close(); $('#deleteAccountBtn').onclick=async()=>{const id=$('#accountId').value;const u=state.users.find(x=>x.id===id); if(u&&confirm('حذف الحساب؟')){state.users=state.users.filter(x=>x.id!==id); saveState(); try{await dbDelete('studio_users',id)}catch(err){alert('Database Error: '+err.message);return} log('Delete Account',u.username); $('#accountDialog').close();render()}}; $('#generatePasswordBtn').onclick=()=>{$('#accountPassword').value='Bv@'+Math.random().toString(36).slice(2,10)};
@@ -319,5 +366,5 @@ function bind(){
   $('#analyzeBriefBtn').onclick=analyzeBrief; $('#copyBriefBtn').onclick=copyBrief; const saveEls=$('#saveBriefElementsBtn'); if(saveEls) saveEls.onclick=saveBriefElementsOnly; $('#closeAiBriefBtn').onclick=()=>$('#aiBriefDialog').close();
   $('#searchInput').oninput=renderBoard; $('#eventFilter').onchange=renderBoard; $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='brivviant-studio-events-state.json';a.click();URL.revokeObjectURL(a.href);log('Export JSON','State exported')}; $('#importInput').onchange=e=>{const f=e.target.files[0];if(!f)return; const r=new FileReader();r.onload=()=>{state=JSON.parse(r.result);saveState();log('Import JSON','State imported');render()};r.readAsText(f)};
 }
-async function boot(){bind(); await initDb(); if(getSession()) $('#loginOverlay').classList.add('hidden'); render()}
+async function boot(){bind(); await initDb(); if(getSession()&&currentUser()) $('#loginOverlay').classList.add('hidden'); else clearSession(); render()}
 boot();

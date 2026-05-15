@@ -13,7 +13,8 @@
     <img src="assets/brivviant-logo.png" class="logo" alt="Brivviant Studios" />
     <div class="brand-kicker">Studio Events Tasks</div>
     <nav>
-      <button class="nav-btn active" data-tab="board">Event Board</button>
+      <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="nav-btn" data-tab="board">Event Board</button>
       <button class="nav-btn" data-tab="mytasks">My Tasks</button>
       <button class="nav-btn admin-only" data-tab="events">Events</button>
       <button class="nav-btn admin-only" data-tab="team">Team</button>
@@ -42,7 +43,22 @@
       </div>
     </header>
 
-    <section id="board" class="tab active">
+    <section id="dashboard" class="tab active">
+      <div class="section-head">
+        <h2>Dashboard</h2>
+        <div class="inline-actions">
+          <button id="quickTaskBtn" class="admin-only">+ Quick Task</button>
+          <button id="quickEventBtn" class="admin-only">+ Quick Event</button>
+        </div>
+      </div>
+      <div id="dashboardGrid" class="dashboard-grid"></div>
+      <div class="dashboard-split">
+        <div class="dash-panel"><h3>المهام المتأخرة / العاجلة</h3><div id="lateTasksPanel" class="dash-list"></div></div>
+        <div class="dash-panel"><h3>آخر النشاطات</h3><div id="recentLogsPanel" class="dash-list"></div></div>
+      </div>
+    </section>
+
+    <section id="board" class="tab">
       <div class="section-head">
         <h2>لوحة الفعاليات</h2>
         <div class="inline-actions">
@@ -164,9 +180,21 @@
       <input id="loginUsername" type="text" placeholder="Username" autocomplete="username" />
       <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
       <button id="loginBtn" type="submit">Login</button>
+      <button id="forgotPasswordBtn" type="button" class="link-btn">نسيت كلمة المرور؟</button>
+      <div id="loginHint" class="login-hint">لو التحميل من Supabase اتأخر، النظام هيدخل Local Mode تلقائيًا بدل ما يعلق.</div>
       <div id="loginError" class="login-error"></div>
     </form>
   </div>
+
+  <dialog id="forgotDialog">
+    <form method="dialog" id="forgotForm">
+      <h2>استرجاع كلمة المرور</h2>
+      <p class="muted">اكتب الـ Username أو Email المسجل. في النسخة الحالية بدون Supabase Auth، النظام سيولّد Password مؤقت ويحدث الحساب مباشرة.</p>
+      <label>Username أو Email<input id="forgotIdentity" required placeholder="مثال: Brivviant أو email@domain.com" /></label>
+      <div id="forgotResult" class="reset-result hidden"></div>
+      <div class="dialog-actions"><span></span><button type="button" id="cancelForgotBtn">إلغاء</button><button id="resetPasswordBtn">توليد Password مؤقت</button></div>
+    </form>
+  </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>

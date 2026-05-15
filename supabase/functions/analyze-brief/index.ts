@@ -1,11 +1,11 @@
 // Brivviant Studio — Supabase Edge Function: analyze-brief
-// Gemini version: reads a PDF brief / كراسة الشروط and extracts design elements.
+// OpenAI version: reads PDF brief / كراسة الشروط and extracts design elements.
 // Deploy:
 //   supabase functions deploy analyze-brief --no-verify-jwt
 // Secrets:
-//   supabase secrets set GEMINI_API_KEY=your_google_ai_studio_key
+//   supabase secrets set OPENAI_API_KEY=your_openai_api_key
 // Optional:
-//   supabase secrets set GEMINI_MODEL=gemini-1.5-flash
+//   supabase secrets set OPENAI_MODEL=gpt-4.1-mini
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,11 +24,11 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed. Use POST only.' }, 405);
 
   try {
-    const apiKey = Deno.env.get('GEMINI_API_KEY');
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
     if (!apiKey) {
       return json({
-        error: 'GEMINI_API_KEY is missing in Supabase Edge Function Secrets.',
-        fix: 'Run: supabase secrets set GEMINI_API_KEY=your-google-ai-studio-key'
+        error: 'OPENAI_API_KEY is missing in Supabase Edge Function Secrets.',
+        fix: 'Run: supabase secrets set OPENAI_API_KEY=your-openai-api-key'
       }, 500);
     }
 
@@ -39,9 +39,10 @@ Deno.serve(async (req) => {
       return json({ error: 'PDF is too large. Upload a PDF under about 9 MB, or split the brief.' }, 413);
     }
 
-    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-1.5-flash';
+    const model = Deno.env.get('OPENAI_MODEL') || 'gpt-4.1-mini';
     const taskTitle = payload.task?.title || 'Untitled task';
     const eventName = payload.task?.event || 'No event';
+    const filename = payload.pdf?.name || 'brief.pdf';
 
     const prompt = `
 أنت AI Bot داخل نظام Brivviant Studio لإدارة تاسكات فعاليات واستوديو تصميم.
@@ -79,33 +80,35 @@ JSON schema المطلوب:
   "raw": "ملاحظات إضافية مختصرة"
 }`;
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: 'application/pdf', data: base64 } }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: 'application/json'
-          }
-        })
-      }
-    );
+    const openaiRes = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        input: [{
+          role: 'user',
+          content: [
+            { type: 'input_text', text: prompt },
+            { type: 'input_file', filename, file_data: `data:application/pdf;base64,${base64}` }
+          ]
+        }]
+      })
+    });
 
-    const data = await geminiRes.json().catch(() => ({}));
-    if (!geminiRes.ok) {
-      return json({ error: data?.error?.message || `Gemini API error ${geminiRes.status}`, details: data }, geminiRes.status);
+    const data = await openaiRes.json().catch(() => ({}));
+    if (!openaiRes.ok) {
+      return json({ error: data?.error?.message || `OpenAI API error ${openaiRes.status}`, details: data }, openaiRes.status);
     }
 
-    const outputText = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('\n') || '';
+    const outputText =
+      data?.output_text ||
+      data?.output?.flatMap((o: any) => o.content || []).map((c: any) => c.text || '').join('\n') ||
+      '';
+
     let analysis: unknown;
     try {
       const cleaned = outputText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
@@ -114,7 +117,7 @@ JSON schema المطلوب:
       analysis = { summary: 'تم التحليل، لكن الرد لم يرجع JSON صالح بالكامل.', raw: outputText };
     }
 
-    return json({ ok: true, provider: 'gemini', analysis });
+    return json({ ok: true, provider: 'openai', model, analysis });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
