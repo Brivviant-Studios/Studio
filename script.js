@@ -114,8 +114,12 @@ function renderDashboard(){
     lateWrap.innerHTML=list.map(t=>`<button class="dash-row" data-open-dash-task="${t.id}"><b>${safe(t.title)}</b><small>${safe(getUserName(t.owner))} • ${safe(t.due||'-')} • ${safe(t.priority||'Normal')}</small></button>`).join('')||'<div class="empty">لا يوجد مهام متأخرة أو عاجلة</div>';
     lateWrap.querySelectorAll('[data-open-dash-task]').forEach(b=>b.onclick=()=>openTask(b.dataset.openDashTask));
   }
-  const logsWrap=$('#recentLogsPanel'); if(logsWrap){
-    logsWrap.innerHTML=(state.logs||[]).slice(0,8).map(l=>`<div class="dash-row static"><b>${safe(l.action)}</b><small>${safe(l.actor)} • ${safe(l.createdAtText)}</small></div>`).join('')||'<div class="empty">لا يوجد نشاط بعد</div>';
+  const logsWrap=$('#recentLogsPanel');
+  const logsPanel=logsWrap?.closest('.dash-panel');
+  if(logsPanel) logsPanel.classList.toggle('hidden',!isAdmin());
+  if(logsWrap){
+    if(!isAdmin()) logsWrap.innerHTML='';
+    else logsWrap.innerHTML=(state.logs||[]).slice(0,8).map(l=>`<div class="dash-row static"><b>${safe(l.action)}</b><small>${safe(l.actor)} • ${safe(l.createdAtText)}</small></div>`).join('')||'<div class="empty">لا يوجد نشاط بعد</div>';
   }
 }
 function makeTempPassword(){return 'Bv@'+Math.random().toString(36).slice(2,10)+Math.floor(10+Math.random()*89)}
@@ -228,7 +232,7 @@ async function markMyTaskDone(id){
 }
 function renderEvents(){const grid=$('#eventsGrid'); grid.innerHTML=state.events.map(e=>`<article class="event-card" data-id="${e.id}"><h3>${safe(e.name)}</h3><p>${safe(e.client||'')}</p><p>${safe(e.date||'')}</p><button data-edit-event="${e.id}">Edit</button></article>`).join(''); grid.querySelectorAll('[data-edit-event]').forEach(b=>b.onclick=()=>openEvent(b.dataset.editEvent))}
 function renderTeam(){const grid=$('#teamGrid'); grid.innerHTML=state.users.map(u=>`<article class="person-card"><h3>${safe(u.nickname||u.name)}</h3><p>@${safe(u.username)} — ${safe(u.role)}</p><p>${safe(u.email||'')}</p><button data-edit-user="${u.id}">Edit</button></article>`).join(''); grid.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>openAccount(b.dataset.editUser))}
-function renderLogs(){const list=$('#logsList'); if(!list)return; list.innerHTML=state.logs.map(l=>`<div class="log-card"><b>${safe(l.action)}</b><span>${safe(l.actor)}<br><small>@${safe(l.username)}</small></span><p>${safe(l.details)} ${l.target?`<small>— ${safe(l.target)}</small>`:''}</p><small>${safe(l.createdAtText)}</small></div>`).join('')||`<div class="empty">No logs yet</div>`}
+function renderLogs(){const list=$('#logsList'); if(!list)return; if(!isAdmin()){list.innerHTML='';return} list.innerHTML=state.logs.map(l=>`<div class="log-card"><b>${safe(l.action)}</b><span>${safe(l.actor)}<br><small>@${safe(l.username)}</small></span><p>${safe(l.details)} ${l.target?`<small>— ${safe(l.target)}</small>`:''}</p><small>${safe(l.createdAtText)}</small></div>`).join('')||`<div class="empty">No logs yet</div>`}
 
 
 function normalizeDesignElements(analysis){
@@ -320,7 +324,7 @@ async function saveBriefElementsOnly(){
 }
 
 
-function switchTab(tab){$$('.tab').forEach(s=>s.classList.toggle('active',s.id===tab));$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$('#pageTitle').textContent=$(`.nav-btn[data-tab="${tab}"]`)?.textContent||tab}
+function switchTab(tab){if(!isAdmin()&&['events','team','logs'].includes(tab)) tab='mytasks'; $$('.tab').forEach(s=>s.classList.toggle('active',s.id===tab));$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$('#pageTitle').textContent=$(`.nav-btn[data-tab="${tab}"]`)?.textContent||tab}
 function openTask(id=''){
   const t=state.tasks.find(x=>x.id===id)||null; pendingFiles=[]; $('#taskId').value=t?.id||''; $('#taskTitle').value=t?.title||''; $('#taskEvent').value=t?.eventId||state.events[0]?.id||''; $('#taskColumn').value=t?.column||'todo'; $('#taskOwner').value=t?.owner||currentUser()?.id||''; $('#taskPriority').value=t?.priority||'Normal'; $('#taskDue').value=t?.due||''; $('#taskTags').value=t?.tags||''; $('#taskNotes').value=t?.notes||''; $('#taskDelayReason').value=t?.delayReason||''; $('#deleteTaskBtn').classList.toggle('hidden',!t||!isAdmin());
   $('#delayReasonWrap').classList.add('hidden'); $('#taskDelayReason').disabled=true;
