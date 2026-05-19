@@ -6,7 +6,7 @@ BRIVVIANT STUDIO — GEMINI AI BRIEF SETUP
    supabase secrets set GEMINI_API_KEY=YOUR_KEY
 
 Optional model override:
-   supabase secrets set GEMINI_MODEL=gemini-1.5-flash
+   supabase secrets set GEMINI_MODEL=gemini-2.5-flash
 
 3) Deploy the Edge Function:
    supabase functions deploy analyze-brief --no-verify-jwt
