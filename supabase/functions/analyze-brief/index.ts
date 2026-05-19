@@ -1,11 +1,20 @@
 // Brivviant Studio — Supabase Edge Function: analyze-brief
-// OpenAI version: reads PDF brief / كراسة الشروط and extracts design elements.
+// Gemini version: reads PDF brief / كراسة الشروط and extracts design elements.
+//
 // Deploy:
 //   supabase functions deploy analyze-brief --no-verify-jwt
-// Secrets:
-//   supabase secrets set OPENAI_API_KEY=your_openai_api_key
-// Optional:
-//   supabase secrets set OPENAI_MODEL=gpt-4.1-mini
+//
+// Recommended Secret:
+//   supabase secrets set GEMINI_API_KEY=your_gemini_api_key
+//
+// Optional model override:
+//   supabase secrets set GEMINI_MODEL=gemini-1.5-flash
+//
+// NOTE:
+// الأفضل أمنيًا تحط المفتاح في Supabase Secrets.
+// هذا المفتاح الاحتياطي يعمل فقط لو Secret غير موجود.
+
+const DEFAULT_GEMINI_API_KEY = 'PUT_YOUR_GEMINI_API_KEY_HERE';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,34 +24,60 @@ const corsHeaders = {
 };
 
 type Payload = {
-  task?: { id?: string; title?: string; event?: string; notes?: string; tags?: string };
-  pdf?: { name?: string; type?: string; base64?: string };
+  task?: {
+    id?: string;
+    title?: string;
+    event?: string;
+    notes?: string;
+    tags?: string;
+  };
+  pdf?: {
+    name?: string;
+    type?: string;
+    base64?: string;
+  };
 };
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed. Use POST only.' }, 405);
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { status: 200, headers: corsHeaders });
+  }
+
+  if (req.method !== 'POST') {
+    return json({ error: 'Method not allowed. Use POST only.' }, 405);
+  }
 
   try {
-    const apiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!apiKey) {
+    const apiKey = Deno.env.get('GEMINI_API_KEY') || DEFAULT_GEMINI_API_KEY;
+
+    if (!apiKey || apiKey === 'AIzaSyAhifBDB1sYH_V4uaK1SiFlN6kiVqi9lV0') {
       return json({
-        error: 'OPENAI_API_KEY is missing in Supabase Edge Function Secrets.',
-        fix: 'Run: supabase secrets set OPENAI_API_KEY=your-openai-api-key'
+        error: 'GEMINI_API_KEY is missing.',
+        fix: 'Add it in Supabase Secrets: supabase secrets set GEMINI_API_KEY=your-gemini-api-key, or replace DEFAULT_GEMINI_API_KEY inside index.ts.'
       }, 500);
     }
 
     const payload = (await req.json()) as Payload;
-    const base64 = payload.pdf?.base64 || '';
-    if (!base64) return json({ error: 'PDF base64 is required.' }, 400);
-    if (base64.length > 12_000_000) {
-      return json({ error: 'PDF is too large. Upload a PDF under about 9 MB, or split the brief.' }, 413);
+    const rawBase64 = payload.pdf?.base64 || '';
+
+    if (!rawBase64) {
+      return json({ error: 'PDF base64 is required.' }, 400);
     }
 
-    const model = Deno.env.get('OPENAI_MODEL') || 'gpt-4.1-mini';
+    const base64 = cleanBase64(rawBase64);
+
+    // Gemini supports inline PDF input; keep this limit conservative for browser upload stability.
+    if (base64.length > 20_000_000) {
+      return json({
+        error: 'PDF is too large. Upload a smaller PDF, compress it, or split the brief into multiple PDFs.'
+      }, 413);
+    }
+
+    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-1.5-flash';
     const taskTitle = payload.task?.title || 'Untitled task';
     const eventName = payload.task?.event || 'No event';
     const filename = payload.pdf?.name || 'brief.pdf';
+    const mimeType = payload.pdf?.type || 'application/pdf';
 
     const prompt = `
 أنت AI Bot داخل نظام Brivviant Studio لإدارة تاسكات فعاليات واستوديو تصميم.
@@ -56,19 +91,26 @@ Deno.serve(async (req) => {
 - استخرج المقاسات والكميات والخامات والمواعيد لو موجودة.
 - لو في نقطة ناقصة أو غير واضحة، ضعها في missing_questions.
 - اكتب بالعربية الواضحة مع إبقاء المصطلحات الإنجليزية كما هي.
-- رجّع JSON فقط بدون Markdown.
+- رجّع JSON فقط بدون Markdown وبدون أي شرح خارج JSON.
 
 Task context:
 - Task title: ${taskTitle}
 - Event / Project: ${eventName}
 - Notes: ${payload.task?.notes || ''}
 - Tags: ${payload.task?.tags || ''}
+- PDF filename: ${filename}
 
-JSON schema المطلوب:
+JSON schema المطلوب بالضبط:
 {
   "summary": "ملخص قصير للكراسة",
   "required_elements": [
-    {"name":"اسم العنصر المطلوب", "description":"شرح مختصر", "quantity":"العدد إن وجد", "dimensions":"المقاس إن وجد", "notes":"ملاحظات"}
+    {
+      "name": "اسم العنصر المطلوب",
+      "description": "شرح مختصر",
+      "quantity": "العدد إن وجد",
+      "dimensions": "المقاس إن وجد",
+      "notes": "ملاحظات"
+    }
   ],
   "dimensions_quantities": ["أي مقاسات أو كميات مهمة"],
   "materials_finishes": ["الخامات والتشطيبات المطلوبة"],
@@ -80,48 +122,93 @@ JSON schema المطلوب:
   "raw": "ملاحظات إضافية مختصرة"
 }`;
 
-    const openaiRes = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.1,
-        input: [{
-          role: 'user',
-          content: [
-            { type: 'input_text', text: prompt },
-            { type: 'input_file', filename, file_data: `data:application/pdf;base64,${base64}` }
-          ]
-        }]
-      })
-    });
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        }),
+      }
+    );
 
-    const data = await openaiRes.json().catch(() => ({}));
-    if (!openaiRes.ok) {
-      return json({ error: data?.error?.message || `OpenAI API error ${openaiRes.status}`, details: data }, openaiRes.status);
+    const data = await geminiRes.json().catch(() => ({}));
+
+    if (!geminiRes.ok) {
+      return json({
+        error: data?.error?.message || `Gemini API error ${geminiRes.status}`,
+        details: data,
+      }, geminiRes.status);
     }
 
-    const outputText =
-      data?.output_text ||
-      data?.output?.flatMap((o: any) => o.content || []).map((c: any) => c.text || '').join('\n') ||
-      '';
+    const outputText = extractGeminiText(data);
 
     let analysis: unknown;
     try {
-      const cleaned = outputText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-      analysis = JSON.parse(cleaned);
+      analysis = JSON.parse(cleanJsonText(outputText));
     } catch (_) {
-      analysis = { summary: 'تم التحليل، لكن الرد لم يرجع JSON صالح بالكامل.', raw: outputText };
+      analysis = {
+        summary: 'تم التحليل، لكن الرد لم يرجع JSON صالح بالكامل.',
+        required_elements: [],
+        dimensions_quantities: [],
+        materials_finishes: [],
+        deliverables: [],
+        deadlines: [],
+        special_requirements: [],
+        missing_questions: ['راجع النص الخام لأن Gemini لم يرجع JSON صالح بالكامل.'],
+        production_notes: [],
+        raw: outputText,
+      };
     }
 
-    return json({ ok: true, provider: 'openai', model, analysis });
+    return json({ ok: true, provider: 'gemini', model, analysis });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
+
+function cleanBase64(value: string) {
+  return value
+    .replace(/^data:application\/pdf;base64,/i, '')
+    .replace(/^data:[^;]+;base64,/i, '')
+    .replace(/\s/g, '')
+    .trim();
+}
+
+function extractGeminiText(data: any) {
+  return (
+    data?.candidates?.[0]?.content?.parts
+      ?.map((part: any) => part?.text || '')
+      .join('\n')
+      .trim() || ''
+  );
+}
+
+function cleanJsonText(text: string) {
+  return text
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
