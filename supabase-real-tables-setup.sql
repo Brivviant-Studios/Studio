@@ -26,6 +26,7 @@ create table if not exists studio_events (
 
 create table if not exists studio_event_tasks (
   id text primary key,
+  board_type text default 'event',
   event_id text references studio_events(id) on delete set null,
   title text not null,
   column_id text default 'todo',
@@ -60,6 +61,7 @@ create table if not exists studio_activity_logs (
 alter table studio_users add column if not exists updated_at timestamptz default now();
 alter table studio_events add column if not exists updated_at timestamptz default now();
 alter table studio_event_tasks add column if not exists updated_at timestamptz default now();
+alter table studio_event_tasks add column if not exists board_type text default 'event';
 alter table studio_event_tasks add column if not exists ai_brief_analysis jsonb;
 alter table studio_event_tasks add column if not exists design_elements jsonb default '[]'::jsonb;
 alter table studio_event_tasks add column if not exists ai_brief_pdf_name text;
@@ -107,3 +109,4 @@ for all to anon using (true) with check (true);
 
 -- Delivery link required by the app before a Staff member can mark a task as Done
 alter table studio_event_tasks add column if not exists drive_link text;
+update studio_event_tasks set board_type='event' where board_type is null;
