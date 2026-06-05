@@ -17,6 +17,9 @@ let activeBoardType='event';
 
 let dbClient=null;
 let dbOnline=false;
+let realtimeChannel=null;
+let realtimeRefreshTimer=null;
+let realtimeRefreshRunning=false;
 function setSync(msg){const el=$('#syncState'); if(el) el.textContent=msg;}
 function withTimeout(promise, ms=9000, label='Request'){return Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label+' timeout')),ms))]);}
 function normalizeRole(r){return String(r||'staff').toLowerCase()==='admin'?'admin':'staff'}
@@ -34,10 +37,11 @@ async function initDb(){
   if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY||!window.supabase){setSync('Local Mode');return false;}
   dbClient=window.supabase.createClient(cfg.SUPABASE_URL.replace(/\/rest\/v1\/?$/,'').replace(/\/$/,''),cfg.SUPABASE_ANON_KEY);
   dbOnline=true; setSync('Supabase Connecting...');
-  try{await withTimeout(loadRemoteState(),9000,'Supabase'); setSync('Supabase Ready'); return true;}catch(err){console.error(err); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode'); return false;}
+  try{await withTimeout(loadRemoteState({mergeLocal:true,syncLocal:true}),9000,'Supabase'); setupRealtime(); setSync('Supabase Ready - Realtime Connecting'); return true;}catch(err){console.error(err); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode'); return false;}
 }
-async function loadRemoteState(){
+async function loadRemoteState(options={}){
   if(!dbClient)return;
+  const {mergeLocal=true,syncLocal=true}=options;
   const [u,e,t,l]=await Promise.all([
     dbClient.from('studio_users').select('*').order('created_at',{ascending:true}),
     dbClient.from('studio_events').select('*').order('created_at',{ascending:true}),
@@ -47,20 +51,55 @@ async function loadRemoteState(){
   const err=[u.error,e.error,t.error,l.error].find(Boolean); if(err) throw err;
   const local=loadState();
   const remoteUsers=(u.data||[]).map(userFromDb), remoteEvents=(e.data||[]).map(eventFromDb), remoteTasks=(t.data||[]).map(taskFromDb), remoteLogs=(l.data||[]).map(logFromDb);
-  state.users=mergeById(local.users,remoteUsers);
-  state.events=mergeById(local.events,remoteEvents);
-  state.tasks=mergeById(local.tasks,remoteTasks,normalizeTask);
-  state.logs=mergeById(local.logs,remoteLogs).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,1000);
+  state.users=mergeLocal?mergeById(local.users,remoteUsers):remoteUsers;
+  state.events=mergeLocal?mergeById(local.events,remoteEvents):remoteEvents;
+  state.tasks=mergeLocal?mergeById(local.tasks,remoteTasks,normalizeTask):remoteTasks;
+  state.logs=(mergeLocal?mergeById(local.logs,remoteLogs):remoteLogs).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,1000);
   if(!state.users.some(x=>x.username==='Brivviant')){state.users.unshift({...DEFAULT_ADMIN}); await dbUpsertUser(DEFAULT_ADMIN)}
   if(!state.events.length){const ev={id:'evt-demo',name:'Internal Studio Event',client:'Brivviant',date:today(),notes:'Demo board'};state.events.push(ev); await dbUpsertEvent(ev)}
   saveState();
-  await syncLocalMissing(local,remoteUsers,remoteEvents,remoteTasks);
+  if(syncLocal) await syncLocalMissing(local,remoteUsers,remoteEvents,remoteTasks);
 }
-async function dbUpsertUser(u){if(dbOnline&&dbClient){const {error}=await dbClient.from('studio_users').upsert(userToDb(u)); if(error)throw error;}}
-async function dbUpsertEvent(e){if(dbOnline&&dbClient){const {error}=await dbClient.from('studio_events').upsert(eventToDb(e)); if(error)throw error;}}
-async function dbUpsertTask(t){if(dbOnline&&dbClient){const payload=taskToDb(t); let {error}=await dbClient.from('studio_event_tasks').upsert(payload); if(error&&/board_type/i.test(error.message||'')){const legacy={...payload}; delete legacy.board_type; const res=await dbClient.from('studio_event_tasks').upsert(legacy); error=res.error; if(!error)setSync('Saved - run SQL update for Social Board');} if(error)throw error;}}
-async function dbInsertLog(l){if(dbOnline&&dbClient){const {error}=await dbClient.from('studio_activity_logs').insert(logToDb(l)); if(error)console.error(error);}}
-async function dbDelete(table,id){if(dbOnline&&dbClient){const {error}=await dbClient.from(table).delete().eq('id',id); if(error)throw error;}}
+function requireDb(){if(!dbClient)throw new Error('Supabase is not connected. Check config.js and internet connection.'); dbOnline=true;}
+async function dbUpsertUser(u){requireDb(); const {error}=await dbClient.from('studio_users').upsert(userToDb(u)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
+async function dbUpsertEvent(e){requireDb(); const {error}=await dbClient.from('studio_events').upsert(eventToDb(e)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
+async function dbUpsertTask(t){requireDb(); const {error}=await dbClient.from('studio_event_tasks').upsert(taskToDb(t)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
+async function dbInsertLog(l){if(!dbClient)return; const {error}=await dbClient.from('studio_activity_logs').insert(logToDb(l)); if(error)console.error(error); else scheduleRealtimeRefresh(700);}
+async function dbDelete(table,id){requireDb(); const {error}=await dbClient.from(table).delete().eq('id',id); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
+function setupRealtime(){
+  if(!dbClient||realtimeChannel)return;
+  const refresh=payload=>scheduleRealtimeRefresh(payload?.table==='studio_activity_logs'?900:250);
+  realtimeChannel=dbClient.channel('studio_realtime_sync_v1')
+    .on('postgres_changes',{event:'*',schema:'public',table:'studio_users'},refresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'studio_events'},refresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'studio_event_tasks'},refresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'studio_activity_logs'},refresh)
+    .subscribe(status=>{
+      if(status==='SUBSCRIBED')setSync('Supabase Realtime Ready');
+      else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')setSync('Supabase Realtime Error');
+    });
+}
+function scheduleRealtimeRefresh(delay=350){
+  if(!dbClient)return;
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer=setTimeout(refreshRemoteFromRealtime,delay);
+}
+async function refreshRemoteFromRealtime(){
+  if(realtimeRefreshRunning||!dbClient)return;
+  realtimeRefreshRunning=true;
+  try{
+    await loadRemoteState({mergeLocal:false,syncLocal:false});
+    dbOnline=true;
+    setSync(realtimeChannel?'Supabase Realtime Ready':'Supabase Ready');
+    render();
+  }catch(err){
+    console.error('Realtime refresh failed:',err);
+    dbOnline=false;
+    setSync('Supabase Realtime Refresh Error');
+  }finally{
+    realtimeRefreshRunning=false;
+  }
+}
 
 let pendingFiles=[];
 let pendingProfileAvatar='';
@@ -184,7 +223,7 @@ function makeTempPassword(){return 'Bv@'+Math.random().toString(36).slice(2,10)+
 async function resetForgotPassword(e){
   e.preventDefault();
   const box=$('#forgotResult'); box.classList.add('hidden'); box.textContent='';
-  if(dbOnline){try{await withTimeout(loadRemoteState(),9000,'Supabase refresh')}catch(err){setSync('Supabase Error - Local Reset');}}
+  if(dbOnline){try{await withTimeout(loadRemoteState({mergeLocal:false,syncLocal:false}),9000,'Supabase refresh')}catch(err){setSync('Supabase Error - Local Reset');}}
   const id=$('#forgotIdentity').value.trim().toLowerCase();
   const u=state.users.find(x=>String(x.username||'').toLowerCase()===id || String(x.email||'').toLowerCase()===id);
   if(!u){box.classList.remove('hidden'); box.innerHTML='الحساب غير موجود. راجع الـ Username أو Email.'; return;}
@@ -419,7 +458,7 @@ async function handleLogin(e){
   const err=$('#loginError'), btn=$('#loginBtn');
   err.textContent=''; btn.disabled=true; const oldText=btn.textContent; btn.textContent='جاري تسجيل الدخول...';
   try{
-    if(dbClient||dbOnline){try{dbOnline=true; await withTimeout(loadRemoteState(),9000,'Supabase login'); setSync('Supabase Ready')}catch(ex){console.warn(ex); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode')}}
+    if(dbClient||dbOnline){try{dbOnline=true; await withTimeout(loadRemoteState({mergeLocal:false,syncLocal:false}),9000,'Supabase login'); setupRealtime(); setSync(realtimeChannel?'Supabase Realtime Ready':'Supabase Ready')}catch(ex){console.warn(ex); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode')}}
     const un=$('#loginUsername').value.trim(), pw=$('#loginPassword').value.trim();
     if(!un||!pw){err.textContent='لازم تدخل Username و Password';return}
     const u=state.users.find(x=>String(x.username).toLowerCase()===un.toLowerCase()&&String(x.password)===pw);

@@ -110,3 +110,42 @@ for all to anon using (true) with check (true);
 -- Delivery link required by the app before a Staff member can mark a task as Done
 alter table studio_event_tasks add column if not exists drive_link text;
 update studio_event_tasks set board_type='event' where board_type is null;
+
+-- Supabase Realtime setup.
+-- This block only adds missing tables to the publication. It never drops tables,
+-- so it avoids "relation is not part of the publication" errors.
+alter table public.studio_users replica identity full;
+alter table public.studio_events replica identity full;
+alter table public.studio_event_tasks replica identity full;
+alter table public.studio_activity_logs replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='supabase_realtime' and schemaname='public' and tablename='studio_users'
+  ) then
+    alter publication supabase_realtime add table public.studio_users;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='supabase_realtime' and schemaname='public' and tablename='studio_events'
+  ) then
+    alter publication supabase_realtime add table public.studio_events;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='supabase_realtime' and schemaname='public' and tablename='studio_event_tasks'
+  ) then
+    alter publication supabase_realtime add table public.studio_event_tasks;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='supabase_realtime' and schemaname='public' and tablename='studio_activity_logs'
+  ) then
+    alter publication supabase_realtime add table public.studio_activity_logs;
+  end if;
+end $$;
