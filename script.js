@@ -1,5 +1,6 @@
 const STORAGE_KEY='brivviant_studio_events_trello_v1';
 const SESSION_KEY='brivviant_studio_events_session_v1';
+const FILES_BUCKET='studio-files';
 const COLUMNS=[
   {id:'todo',title:'To Do'},
   {id:'progress',title:'In Progress'},
@@ -24,26 +25,26 @@ function setSync(msg){const el=$('#syncState'); if(el) el.textContent=msg;}
 function withTimeout(promise, ms=9000, label='Request'){return Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label+' timeout')),ms))]);}
 function normalizeRole(r){return String(r||'staff').toLowerCase()==='admin'?'admin':'staff'}
 function normalizeBoardType(v){return String(v||'event').toLowerCase()==='social'?'social':'event'}
-function userFromDb(r){return {id:r.id,name:r.name||'',nickname:r.nickname||'',username:r.username||'',password:r.password||'',email:r.email||'',role:normalizeRole(r.role),avatar:r.avatar||''}}
-function userToDb(u){return {id:u.id,name:u.name||'',nickname:u.nickname||'',username:u.username||'',password:u.password||'',email:u.email||'',role:normalizeRole(u.role),avatar:u.avatar||''}}
+function userFromDb(r){const u={id:r.id,name:r.name||'',nickname:r.nickname||'',username:r.username||'',email:r.email||'',role:normalizeRole(r.role),avatar:r.avatar||''};if(Object.prototype.hasOwnProperty.call(r,'password'))u.password=r.password||'';return u}
+function userToDb(u){const row={id:u.id,name:u.name||'',nickname:u.nickname||'',username:u.username||'',email:u.email||'',role:normalizeRole(u.role),avatar:u.avatar||''};if(u.password)row.password=u.password;return row}
 function eventFromDb(r){return {id:r.id,name:r.name||'',client:r.client||'',date:r.event_date||'',notes:r.notes||''}}
 function eventToDb(e){return {id:e.id,name:e.name||'',client:e.client||'',event_date:e.date||null,notes:e.notes||''}}
-function taskFromDb(r){return normalizeTask({id:r.id,boardType:r.board_type,eventId:r.event_id,title:r.title||'',column:r.column_id||'todo',owner:r.owner||'',ownerName:r.owner_name||'',priority:r.priority||'Normal',due:r.due||'',tags:r.tags||'',notes:r.notes||'',delayReason:r.delay_reason||'',attachments:Array.isArray(r.attachments)?r.attachments:[],aiBriefAnalysis:r.ai_brief_analysis||null,designElements:Array.isArray(r.design_elements)?r.design_elements:[],aiBriefPdfName:r.ai_brief_pdf_name||'',aiBriefAnalyzedAt:r.ai_brief_analyzed_at||'',driveLink:r.drive_link||'',updatedAt:r.updated_at||''})}
-function taskToDb(t){return {id:t.id,board_type:normalizeBoardType(t.boardType),event_id:normalizeBoardType(t.boardType)==='event'?(t.eventId||null):null,title:t.title||'',column_id:t.column||'todo',owner:t.owner||'',owner_name:t.ownerName||'',priority:t.priority||'Normal',due:t.due||null,tags:t.tags||'',notes:t.notes||'',delay_reason:t.delayReason||'',attachments:t.attachments||[],ai_brief_analysis:t.aiBriefAnalysis||null,design_elements:t.designElements||[],ai_brief_pdf_name:t.aiBriefPdfName||null,ai_brief_analyzed_at:t.aiBriefAnalyzedAt||null,drive_link:t.driveLink||'',updated_at:t.updatedAt||new Date().toISOString()}}
+function taskFromDb(r){return normalizeTask({id:r.id,boardType:r.board_type,eventId:r.event_id,title:r.title||'',column:r.column_id||'todo',owner:r.owner||'',ownerName:r.owner_name||'',priority:r.priority||'Normal',due:r.due||'',tags:r.tags||'',notes:r.notes||'',delayReason:r.delay_reason||'',attachments:Array.isArray(r.attachments)?r.attachments:[],aiBriefAnalysis:r.ai_brief_analysis||null,designElements:Array.isArray(r.design_elements)?r.design_elements:[],aiBriefPdfName:r.ai_brief_pdf_name||'',aiBriefPdfPath:r.ai_brief_pdf_path||'',aiBriefPdfUrl:r.ai_brief_pdf_url||'',aiBriefAnalyzedAt:r.ai_brief_analyzed_at||'',driveLink:r.drive_link||'',updatedAt:r.updated_at||''})}
+function taskToDb(t){return {id:t.id,board_type:normalizeBoardType(t.boardType),event_id:normalizeBoardType(t.boardType)==='event'?(t.eventId||null):null,title:t.title||'',column_id:t.column||'todo',owner:t.owner||'',owner_name:t.ownerName||'',priority:t.priority||'Normal',due:t.due||null,tags:t.tags||'',notes:t.notes||'',delay_reason:t.delayReason||'',attachments:t.attachments||[],ai_brief_analysis:t.aiBriefAnalysis||null,design_elements:t.designElements||[],ai_brief_pdf_name:t.aiBriefPdfName||null,ai_brief_pdf_path:t.aiBriefPdfPath||null,ai_brief_pdf_url:t.aiBriefPdfUrl||null,ai_brief_analyzed_at:t.aiBriefAnalyzedAt||null,drive_link:t.driveLink||'',updated_at:t.updatedAt||new Date().toISOString()}}
 function logFromDb(r){return {id:r.id,action:r.action||'',details:r.details||'',target:r.target||'',actor:r.actor||'',username:r.username||'',role:r.role||'',createdAt:r.created_at||'',createdAtText:r.created_at?new Date(r.created_at).toLocaleString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}):''}}
 function logToDb(l){return {id:l.id,action:l.action,details:l.details,target:l.target,actor:l.actor,username:l.username,role:l.role,created_at:l.createdAt||new Date().toISOString()}}
 async function initDb(){
   const cfg=window.BRIVVIANT_CONFIG||{};
-  if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY||!window.supabase){setSync('Local Mode');return false;}
+  if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY||!window.supabase){setSync('Supabase غير مُعد');return false;}
   dbClient=window.supabase.createClient(cfg.SUPABASE_URL.replace(/\/rest\/v1\/?$/,'').replace(/\/$/,''),cfg.SUPABASE_ANON_KEY);
   dbOnline=true; setSync('Supabase Connecting...');
-  try{await withTimeout(loadRemoteState({mergeLocal:true,syncLocal:true}),9000,'Supabase'); setupRealtime(); setSync('Supabase Ready - Realtime Connecting'); return true;}catch(err){console.error(err); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode'); return false;}
+  try{await withTimeout(loadRemoteState({mergeLocal:false,syncLocal:false}),12000,'Supabase'); setupRealtime(); setSync('Supabase Ready - Realtime Connecting'); return true;}catch(err){console.error(err); dbOnline=false; setSync('Supabase غير متصل - الحفظ متوقف'); return false;}
 }
 async function loadRemoteState(options={}){
   if(!dbClient)return;
-  const {mergeLocal=true,syncLocal=true}=options;
+  const {mergeLocal=false,syncLocal=false}=options;
   const [u,e,t,l]=await Promise.all([
-    dbClient.from('studio_users').select('*').order('created_at',{ascending:true}),
+    dbClient.from('studio_users').select('id,name,nickname,username,email,role,avatar,created_at,updated_at').order('created_at',{ascending:true}),
     dbClient.from('studio_events').select('*').order('created_at',{ascending:true}),
     dbClient.from('studio_event_tasks').select('*').order('created_at',{ascending:true}),
     dbClient.from('studio_activity_logs').select('*').order('created_at',{ascending:false}).limit(1000)
@@ -55,17 +56,43 @@ async function loadRemoteState(options={}){
   state.events=mergeLocal?mergeById(local.events,remoteEvents):remoteEvents;
   state.tasks=mergeLocal?mergeById(local.tasks,remoteTasks,normalizeTask):remoteTasks;
   state.logs=(mergeLocal?mergeById(local.logs,remoteLogs):remoteLogs).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,1000);
-  if(!state.users.some(x=>x.username==='Brivviant')){state.users.unshift({...DEFAULT_ADMIN}); await dbUpsertUser(DEFAULT_ADMIN)}
+  if(!state.users.some(x=>x.username==='Brivviant')){await dbUpsertUser(DEFAULT_ADMIN);state.users.unshift({...DEFAULT_ADMIN})}
   if(!state.events.length){const ev={id:'evt-demo',name:'Internal Studio Event',client:'Brivviant',date:today(),notes:'Demo board'};state.events.push(ev); await dbUpsertEvent(ev)}
   saveState();
   if(syncLocal) await syncLocalMissing(local,remoteUsers,remoteEvents,remoteTasks);
 }
 function requireDb(){if(!dbClient)throw new Error('Supabase is not connected. Check config.js and internet connection.'); dbOnline=true;}
-async function dbUpsertUser(u){requireDb(); const {error}=await dbClient.from('studio_users').upsert(userToDb(u)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
+async function dbUpsertUser(u){requireDb();const existing=state.users.some(x=>x.id===u.id);const payload=userToDb(u);const {error}=existing?await dbClient.from('studio_users').update(payload).eq('id',u.id):await dbClient.from('studio_users').insert(payload);if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(500);}
 async function dbUpsertEvent(e){requireDb(); const {error}=await dbClient.from('studio_events').upsert(eventToDb(e)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
 async function dbUpsertTask(t){requireDb(); const {error}=await dbClient.from('studio_event_tasks').upsert(taskToDb(t)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
-async function dbInsertLog(l){if(!dbClient)return; const {error}=await dbClient.from('studio_activity_logs').insert(logToDb(l)); if(error)console.error(error); else scheduleRealtimeRefresh(700);}
+async function dbInsertLog(l){requireDb(); const {error}=await dbClient.from('studio_activity_logs').insert(logToDb(l)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(700);}
+async function dbInsertLoginEvent(event){
+  requireDb();
+  const {error}=await dbClient.from('studio_login_events').insert({
+    id:event.id,session_id:event.sessionId||null,user_id:event.userId||null,username:event.username||'',success:!!event.success,
+    failure_reason:event.failureReason||null,event_type:event.eventType||'login',user_agent:navigator.userAgent||'',created_at:event.createdAt||new Date().toISOString()
+  });
+  if(error){dbOnline=false;throw error;}
+}
+async function dbLogin(username,password,sessionId){
+  requireDb();
+  const {data,error}=await dbClient.rpc('studio_login',{p_username:username,p_password:password,p_session_id:sessionId,p_user_agent:navigator.userAgent||''});
+  if(error){dbOnline=false;throw error;}
+  const row=Array.isArray(data)?data[0]:data;
+  return row?userFromDb(row):null;
+}
 async function dbDelete(table,id){requireDb(); const {error}=await dbClient.from(table).delete().eq('id',id); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
+function safeObjectName(name){return String(name||'file').normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(-120)||'file'}
+async function uploadStudioFile(file,folder){
+  requireDb();
+  if(!file)throw new Error('No file selected.');
+  const id=uid(), path=`${folder}/${id}-${safeObjectName(file.name)}`;
+  const {error}=await dbClient.storage.from(FILES_BUCKET).upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false,cacheControl:'3600'});
+  if(error)throw error;
+  const {data}=dbClient.storage.from(FILES_BUCKET).getPublicUrl(path);
+  return {id,name:file.name,type:file.type||'application/octet-stream',size:file.size,path,url:data.publicUrl,data:data.publicUrl,createdAt:new Date().toISOString(),createdBy:currentUser()?.username||''};
+}
+async function deleteStudioFile(path){if(!path)return;requireDb();const {error}=await dbClient.storage.from(FILES_BUCKET).remove([path]);if(error)throw error;}
 function setupRealtime(){
   if(!dbClient||realtimeChannel)return;
   const refresh=payload=>scheduleRealtimeRefresh(payload?.table==='studio_activity_logs'?900:250);
@@ -145,8 +172,8 @@ async function syncLocalMissing(local,remoteUsers,remoteEvents,remoteTasks){
     for(const e of missing(local.events,remoteEvents)) await dbUpsertEvent(e);
     for(const t of missing(local.tasks,remoteTasks)) await dbUpsertTask(normalizeTask(t));
   }catch(err){
-    console.warn('Local records kept but could not be synced:',err);
-    setSync('Saved Local - Supabase needs setup');
+    console.warn('Cached records could not be synced:',err);
+    setSync('Supabase sync failed');
   }
 }
 function loadImportedState(imported){
@@ -164,7 +191,7 @@ function getSafeLocalState(){
   // but not duplicated into localStorage because browsers usually allow only ~5MB.
   return {
     events: state.events || [],
-    users: (state.users || []).map(u => ({...u, avatar: ''})),
+    users: (state.users || []).map(u => ({...u, password: '', avatar: ''})),
     tasks: (state.tasks || []).map(t => ({
       ...t,
       attachments: [],
@@ -190,13 +217,13 @@ function saveState(){
   }
 }
 function getSession(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch(e){return null}}
-function setSession(u){localStorage.setItem(SESSION_KEY,JSON.stringify({id:u.id,username:u.username,role:u.role,name:u.name}))}
+function setSession(u,sessionId=uid()){localStorage.setItem(SESSION_KEY,JSON.stringify({id:u.id,username:u.username,role:u.role,name:u.name,sessionId,startedAt:new Date().toISOString()}));return sessionId}
 function clearSession(){localStorage.removeItem(SESSION_KEY)}
 function currentUser(){const s=getSession(); return s?state.users.find(u=>u.id===s.id||u.username===s.username):null}
 function isAdmin(){return currentUser()?.role==='admin'}
 function isTaskOwner(t){const u=currentUser(); if(!u||!t)return false; return [u.id,u.name,u.username,u.nickname,u.email].filter(Boolean).map(x=>String(x).toLowerCase()).includes(String(t.owner||'').toLowerCase())}
 function isLate(t){return t.column==='late'||(t.due&&t.due<today()&&t.column!=='done')}
-function log(action,details='',target=''){const entry={id:uid(),action,details,target,actor:currentUser()?.name||'Unknown',username:currentUser()?.username||'',role:currentUser()?.role||'',createdAt:new Date().toISOString(),createdAtText:nowText()};state.logs.unshift(entry);state.logs=state.logs.slice(0,1000);saveState();dbInsertLog(entry);renderLogs()}
+function log(action,details='',target=''){const entry={id:uid(),action,details,target,actor:currentUser()?.name||'Unknown',username:currentUser()?.username||'',role:currentUser()?.role||'',createdAt:new Date().toISOString(),createdAtText:nowText()};state.logs.unshift(entry);state.logs=state.logs.slice(0,1000);saveState();dbInsertLog(entry).catch(err=>{console.error('Activity log was not saved:',err);setSync('Supabase Log Error')});renderLogs();return entry}
 function fileToData(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res({id:uid(),name:file.name,type:file.type||'application/octet-stream',size:file.size,data:r.result,createdAt:new Date().toISOString(),createdBy:currentUser()?.username||''});r.onerror=rej;r.readAsDataURL(file)})}
 
 function renderDashboard(){
@@ -227,8 +254,9 @@ async function resetForgotPassword(e){
   const id=$('#forgotIdentity').value.trim().toLowerCase();
   const u=state.users.find(x=>String(x.username||'').toLowerCase()===id || String(x.email||'').toLowerCase()===id);
   if(!u){box.classList.remove('hidden'); box.innerHTML='الحساب غير موجود. راجع الـ Username أو Email.'; return;}
-  const temp=makeTempPassword(); u.password=temp; saveState();
-  try{await dbUpsertUser(u)}catch(err){box.classList.remove('hidden'); box.innerHTML='تم التغيير Local فقط، لكن Supabase رفض الحفظ: '+safe(err.message); return;}
+  const temp=makeTempPassword(),next={...u,password:temp};
+  try{await dbUpsertUser(next)}catch(err){box.classList.remove('hidden'); box.innerHTML='Supabase رفض حفظ كلمة المرور: '+safe(err.message); return;}
+  Object.assign(u,next);saveState();
   box.classList.remove('hidden'); box.innerHTML=`Password مؤقت:<br><b>${safe(temp)}</b><br><small>انسخه وسجل دخول، وبعدها غيره من Profile.</small>`;
   log('Reset Password','Temporary password generated',u.username);
 }
@@ -267,7 +295,8 @@ function renderDesignElements(elements,compact=false){
   }).join('')}${compact&&list.length>3?`<small class="more-elements">+ ${list.length-3} عناصر أخرى</small>`:''}</div>`;
 }
 function taskContextName(t){return normalizeBoardType(t.boardType)==='social'?'Social Board':getEventName(t.eventId)}
-function taskCard(t){const atts=t.attachments||[];const contextLabel=normalizeBoardType(t.boardType)==='social'?'Board':'Event';return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>${contextLabel}</small><b>${safe(taskContextName(t))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${renderDesignElements(t.designElements,true)}${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${a.data}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div>${t.driveLink?`<div class="task-drive"><small>Drive</small><a href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a></div>`:''}<div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
+function attachmentUrl(a){return a?.url||a?.data||''}
+function taskCard(t){const atts=t.attachments||[];const contextLabel=normalizeBoardType(t.boardType)==='social'?'Board':'Event';return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>${contextLabel}</small><b>${safe(taskContextName(t))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${renderDesignElements(t.designElements,true)}${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${safe(attachmentUrl(a))}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div>${t.driveLink?`<div class="task-drive"><small>Drive</small><a href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a></div>`:''}<div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
 function renderMyTasks(){
   const u=currentUser();
   const list=$('#myTasksList');
@@ -308,10 +337,9 @@ async function saveMyDelayReason(id){
   const t=state.tasks.find(x=>x.id===id);
   if(!t||!isTaskOwner(t)){alert('غير مسموح تعديل سبب التأخير إلا لصاحب التاسك.');log('Blocked Delay Edit','Unauthorized delay reason edit',t?.title||id);return}
   const input=document.querySelector(`[data-delay-input="${CSS.escape(id)}"]`);
-  t.delayReason=(input?.value||'').trim();
-  t.updatedAt=new Date().toISOString();
-  saveState();
-  try{await dbUpsertTask(t)}catch(err){alert('Database Error: '+err.message);return}
+  const next={...t,delayReason:(input?.value||'').trim(),updatedAt:new Date().toISOString()};
+  try{await dbUpsertTask(next)}catch(err){alert('Database Error: '+err.message);return}
+  Object.assign(t,next);saveState();
   log('Update Delay Reason',t.delayReason,t.title);
   render();
 }
@@ -323,11 +351,9 @@ async function markMyTaskDone(id){
   const link=(input?.value||'').trim();
   if(!link){alert('لازم تضيف Drive Link للتسليم قبل ما تعمل Done.');return}
   if(!/^https?:\/\//i.test(link)){alert('Drive Link لازم يبدأ بـ http أو https.');return}
-  t.driveLink=link;
-  t.column='done';
-  t.updatedAt=new Date().toISOString();
-  saveState();
-  try{await dbUpsertTask(t)}catch(err){alert('Database Error: '+err.message);return}
+  const next={...t,driveLink:link,column:'done',updatedAt:new Date().toISOString()};
+  try{await dbUpsertTask(next)}catch(err){alert('Database Error: '+err.message);return}
+  Object.assign(t,next);saveState();
   log('Mark Done',`Done with drive link: ${link}`,t.title);
   render();
 }
@@ -350,7 +376,8 @@ function briefAnalysisToHtml(analysis){
   const esc=safe;
   const arr=(v)=>Array.isArray(v)?v.filter(Boolean):[];
   if(typeof analysis==='string') return `<div class="brief-block">${esc(analysis).replace(/\n/g,'<br>')}</div>`;
-  const section=(title,items)=>arr(items).length?`<h3>${esc(title)}</h3><ul>${arr(items).map(x=>`<li>${esc(typeof x==='string'?x:JSON.stringify(x))}</li>`).join('')}</ul>`:'';
+  const itemText=x=>typeof x==='string'?x:[x?.name||x?.title,x?.description,x?.quantity&&`العدد: ${x.quantity}`,x?.dimensions&&`المقاس: ${x.dimensions}`,x?.notes].filter(Boolean).join(' — ');
+  const section=(title,items)=>arr(items).length?`<h3>${esc(title)}</h3><ul>${arr(items).map(x=>`<li>${esc(itemText(x))}</li>`).join('')}</ul>`:'';
   return `${analysis.summary?`<div class="brief-block"><b>Summary</b><br>${esc(analysis.summary)}</div>`:''}
     ${section('العناصر المطلوبة من العميل',analysis.required_elements)}
     ${section('المقاسات / الكميات',analysis.dimensions_quantities)}
@@ -392,14 +419,18 @@ async function analyzeBrief(){
     })});
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||data.message||`API Error ${res.status}`);
-    task.aiBriefAnalysis=data.analysis||data;
-    task.designElements=normalizeDesignElements(task.aiBriefAnalysis);
-    task.aiBriefPdfName=pendingAiPdf.name;
-    task.aiBriefAnalyzedAt=new Date().toISOString();
-    saveState(); await dbUpsertTask(task); log('AI Brief Analysis',pendingAiPdf.name,task.title);
+    const analysis=data.analysis||data;
+    const designElements=normalizeDesignElements(analysis);
+    if(!analysis||typeof analysis!=='object')throw new Error('الـ AI لم يرجع نتيجة منظمة. أعد المحاولة بملف PDF أوضح.');
+    $('#aiBriefStatus').textContent='تم التحليل. جاري رفع ملف البريف وحفظ العناصر في Supabase...';
+    const uploaded=await uploadStudioFile(pendingAiPdf.file,`briefs/${task.id}`);
+    const next={...task,aiBriefAnalysis:analysis,designElements,aiBriefPdfName:pendingAiPdf.name,aiBriefPdfPath:uploaded.path,aiBriefPdfUrl:uploaded.url,aiBriefAnalyzedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    try{await dbUpsertTask(next)}catch(err){await deleteStudioFile(uploaded.path).catch(()=>{});throw err}
+    if(task.aiBriefPdfPath&&task.aiBriefPdfPath!==uploaded.path)await deleteStudioFile(task.aiBriefPdfPath).catch(console.warn);
+    Object.assign(task,next);saveState();log('AI Brief Analysis',`${pendingAiPdf.name} — ${designElements.length} elements`,task.title);
     $('#aiBriefOutput').classList.remove('empty');
     $('#aiBriefOutput').innerHTML=briefAnalysisToHtml(task.aiBriefAnalysis);
-    $('#aiBriefStatus').textContent='تم استخراج العناصر المطلوبة وحفظها داخل خانة العناصر في نفس الكارت.';
+    $('#aiBriefStatus').textContent=designElements.length?`تم استخراج وحفظ ${designElements.length} عنصر داخل نفس الكارت في Supabase.`:'تم حفظ التحليل وملف البريف في Supabase، لكن الـPDF لا يحتوي عناصر تنفيذ واضحة. راجع الملخص أو جرّب نسخة أوضح.';
     render();
   }catch(err){
     const msg=(err instanceof TypeError && String(err.message).includes('Failed to fetch'))
@@ -416,10 +447,10 @@ function copyBrief(){
 async function saveBriefElementsOnly(){
   const t=state.tasks.find(x=>x.id===$('#aiBriefTaskId').value);
   if(!t?.aiBriefAnalysis){$('#aiBriefStatus').textContent='حلل PDF الأول.';return}
-  t.designElements=normalizeDesignElements(t.aiBriefAnalysis);
-  saveState();
-  try{await dbUpsertTask(t)}catch(err){alert('Database Error: '+err.message);return}
-  $('#aiBriefStatus').textContent='تم حفظ العناصر داخل نفس الكارت.';
+  const next={...t,designElements:normalizeDesignElements(t.aiBriefAnalysis),updatedAt:new Date().toISOString()};
+  try{await dbUpsertTask(next)}catch(err){alert('Database Error: '+err.message);return}
+  Object.assign(t,next);saveState();
+  $('#aiBriefStatus').textContent=`تم حفظ ${t.designElements.length} عنصر داخل نفس الكارت في Supabase.`;
   log('Save Brief Elements',`${t.designElements.length} elements saved`,t.title);
   render();
 }
@@ -439,51 +470,72 @@ function openTask(id='',boardType=currentBoardType()){
   const ev=$('#taskElementsView'); if(ev){ev.classList.toggle('empty',!(t?.designElements||[]).length); ev.innerHTML=renderDesignElements(t?.designElements||[],false)||'لم يتم استخراج عناصر بعد';}
   renderAttachmentPreview(t?.attachments||[]); $('#taskDialog').showModal();
 }
-function renderAttachmentPreview(atts){const wrap=$('#taskAttachmentsPreview'); wrap.innerHTML=atts.map(a=>`<div class="attachment-card" data-att="${a.id}">${a.type?.startsWith('image/')?`<img src="${a.data}" alt="">`:`<div class="pdf-chip">PDF</div>`}<a href="${a.data}" download="${safe(a.name)}">تحميل ${safe(a.name)}</a>${isAdmin()?`<button type="button" data-del-att="${a.id}">حذف</button>`:''}</div>`).join(''); wrap.querySelectorAll('[data-del-att]').forEach(b=>b.onclick=()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); if(t){t.attachments=(t.attachments||[]).filter(a=>a.id!==b.dataset.delAtt); log('Delete Attachment',b.dataset.delAtt,t.title); saveState(); dbUpsertTask(t); renderAttachmentPreview(t.attachments); render();}})}
-async function saveTask(e){e.preventDefault(); const id=$('#taskId').value; const owner=state.users.find(u=>u.id===$('#taskOwner').value); const type=normalizeBoardType($('#taskBoardType').value); let t=state.tasks.find(x=>x.id===id); const isNew=!t; if(!t){t={id:uid(),attachments:[]}; state.tasks.push(t)}
-  if(!isAdmin()&&!isTaskOwner(t)){alert('غير مسموح تعديل هذا التاسك'); log('Blocked Edit','Unauthorized task edit',$('#taskTitle').value);return}
+function renderAttachmentPreview(atts){const wrap=$('#taskAttachmentsPreview'); wrap.innerHTML=atts.map(a=>`<div class="attachment-card" data-att="${a.id}">${a.type?.startsWith('image/')?`<img src="${safe(attachmentUrl(a))}" alt="">`:`<div class="pdf-chip">PDF</div>`}<a href="${safe(attachmentUrl(a))}" target="_blank" rel="noopener">فتح ${safe(a.name)}</a>${isAdmin()&&!a.pending?`<button type="button" data-del-att="${a.id}">حذف</button>`:''}</div>`).join(''); wrap.querySelectorAll('[data-del-att]').forEach(b=>b.onclick=async()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); const file=t?.attachments?.find(a=>a.id===b.dataset.delAtt); if(!t||!file)return; const next={...t,attachments:t.attachments.filter(a=>a.id!==file.id),updatedAt:new Date().toISOString()}; try{await dbUpsertTask(next);await deleteStudioFile(file.path)}catch(err){alert('لم يتم حذف الملف من Supabase: '+err.message);return}Object.assign(t,next);saveState();log('Delete Attachment',file.name,t.title);renderAttachmentPreview(t.attachments);render();})}
+async function saveTask(e){e.preventDefault(); const id=$('#taskId').value; const owner=state.users.find(u=>u.id===$('#taskOwner').value); const type=normalizeBoardType($('#taskBoardType').value); const current=state.tasks.find(x=>x.id===id); const isNew=!current; const t={...(current||{id:uid(),attachments:[]})};
+  if(!isAdmin()&&current&&!isTaskOwner(current)){alert('غير مسموح تعديل هذا التاسك'); log('Blocked Edit','Unauthorized task edit',$('#taskTitle').value);return}
   t.title=$('#taskTitle').value.trim(); t.boardType=type; t.eventId=type==='event'?$('#taskEvent').value:''; t.column=$('#taskColumn').value; t.owner=owner?.id||$('#taskOwner').value; t.ownerName=owner?(owner.nickname||owner.name):''; t.priority=$('#taskPriority').value; t.due=$('#taskDue').value; t.tags=$('#taskTags').value; t.notes=$('#taskNotes').value; t.updatedAt=new Date().toISOString();
-  if(pendingFiles.length){t.attachments=[...(t.attachments||[]),...pendingFiles];}
-  saveState(); try{await dbUpsertTask(t); setSync('Supabase Ready')}catch(err){console.error(err); dbOnline=false; setSync('Saved Local - Supabase Error'); alert('Task saved locally, but Supabase did not accept it yet. Run supabase-real-tables-setup.sql in Supabase, then reopen. Error: '+err.message)} log(isNew?'Create Task':'Update Task',t.title,taskContextName(t)); $('#taskDialog').close(); render();
+  const uploaded=[];
+  try{
+    setSync(pendingFiles.length?'Uploading files to Supabase...':'Saving to Supabase...');
+    for(const file of pendingFiles)uploaded.push(await uploadStudioFile(file,`tasks/${t.id}`));
+    t.attachments=[...(t.attachments||[]),...uploaded];
+    await dbUpsertTask(t);
+  }catch(err){for(const file of uploaded)await deleteStudioFile(file.path).catch(()=>{});setSync('Supabase Save Error');alert('لم يتم الحفظ في Supabase: '+err.message);return}
+  if(isNew)state.tasks.push(t);else Object.assign(current,t);pendingFiles=[];saveState();setSync('Supabase Ready');log(isNew?'Create Task':'Update Task',t.title,taskContextName(t));$('#taskDialog').close();render();
 }
 function openEvent(id=''){const e=state.events.find(x=>x.id===id)||null; $('#eventId').value=e?.id||''; $('#eventName').value=e?.name||''; $('#eventClient').value=e?.client||''; $('#eventDate').value=e?.date||''; $('#eventNotes').value=e?.notes||''; $('#deleteEventBtn').classList.toggle('hidden',!e); $('#eventDialog').showModal()}
-async function saveEvent(e){e.preventDefault(); let ev=state.events.find(x=>x.id===$('#eventId').value); const isNew=!ev; if(!ev){ev={id:uid()};state.events.push(ev)} ev.name=$('#eventName').value; ev.client=$('#eventClient').value; ev.date=$('#eventDate').value; ev.notes=$('#eventNotes').value; saveState(); try{await dbUpsertEvent(ev)}catch(err){alert('Database Error: '+err.message);return} log(isNew?'Create Event':'Update Event',ev.name); $('#eventDialog').close();render()}
-function openAccount(id=''){const u=state.users.find(x=>x.id===id)||null; $('#accountId').value=u?.id||''; $('#accountName').value=u?.name||''; $('#accountNickname').value=u?.nickname||''; $('#accountUsername').value=u?.username||''; $('#accountEmail').value=u?.email||''; $('#accountPassword').value=u?.password||''; $('#accountRole').value=u?.role||'staff'; $('#deleteAccountBtn').classList.toggle('hidden',!u||u.username==='Brivviant'); $('#accountDialog').showModal()}
-async function saveAccount(e){e.preventDefault(); let u=state.users.find(x=>x.id===$('#accountId').value); const isNew=!u; const username=$('#accountUsername').value.trim(); if(state.users.some(x=>x.username===username && x.id!==$('#accountId').value)){alert('Username موجود بالفعل');return} if(!u){u={id:uid(),avatar:''};state.users.push(u)} u.name=$('#accountName').value; u.nickname=$('#accountNickname').value; u.username=username; u.email=$('#accountEmail').value; u.password=$('#accountPassword').value; u.role=normalizeRole($('#accountRole').value); saveState(); try{await dbUpsertUser(u)}catch(err){alert('Database Error: '+err.message);return} log(isNew?'Create Account':'Update Account',u.username); $('#accountDialog').close();render()}
+async function saveEvent(e){e.preventDefault();const current=state.events.find(x=>x.id===$('#eventId').value);const isNew=!current;const ev={...(current||{id:uid()}),name:$('#eventName').value,client:$('#eventClient').value,date:$('#eventDate').value,notes:$('#eventNotes').value};try{await dbUpsertEvent(ev)}catch(err){alert('لم يتم الحفظ في Supabase: '+err.message);return}if(isNew)state.events.push(ev);else Object.assign(current,ev);saveState();log(isNew?'Create Event':'Update Event',ev.name);$('#eventDialog').close();render()}
+function openAccount(id=''){const u=state.users.find(x=>x.id===id)||null; $('#accountId').value=u?.id||''; $('#accountName').value=u?.name||''; $('#accountNickname').value=u?.nickname||''; $('#accountUsername').value=u?.username||''; $('#accountEmail').value=u?.email||''; $('#accountPassword').value='';$('#accountPassword').placeholder=u?'اتركها فارغة للاحتفاظ بكلمة المرور':'مطلوبة للحساب الجديد'; $('#accountRole').value=u?.role||'staff'; $('#deleteAccountBtn').classList.toggle('hidden',!u||u.username==='Brivviant'); $('#accountDialog').showModal()}
+async function saveAccount(e){e.preventDefault();const current=state.users.find(x=>x.id===$('#accountId').value);const isNew=!current;const username=$('#accountUsername').value.trim(),newPassword=$('#accountPassword').value;if(isNew&&!newPassword){alert('Password مطلوبة للحساب الجديد');return}if(state.users.some(x=>x.username===username&&x.id!==$('#accountId').value)){alert('Username موجود بالفعل');return}const u={...(current||{id:uid(),avatar:''}),name:$('#accountName').value,nickname:$('#accountNickname').value,username,email:$('#accountEmail').value,role:normalizeRole($('#accountRole').value)};if(newPassword)u.password=newPassword;else delete u.password;try{await dbUpsertUser(u)}catch(err){alert('لم يتم الحفظ في Supabase: '+err.message);return}if(isNew)state.users.push(u);else Object.assign(current,u);saveState();log(isNew?'Create Account':'Update Account',u.username);$('#accountDialog').close();render()}
 function openProfile(){const u=currentUser(); if(!u)return; pendingProfileAvatar=''; $('#profileName').value=u.name||''; $('#profileNickname').value=u.nickname||''; $('#profileUsername').value=u.username||''; $('#profileEmail').value=u.email||''; $('#profilePassword').value=''; $('#avatarPreview').innerHTML=u.avatar?`<img src="${u.avatar}">`:'No Image'; $('#profileDialog').showModal()}
-async function saveProfile(e){e.preventDefault();const u=currentUser(); if(!u)return; u.name=$('#profileName').value; u.nickname=$('#profileNickname').value; u.email=$('#profileEmail').value; if($('#profilePassword').value)u.password=$('#profilePassword').value; if(pendingProfileAvatar)u.avatar=pendingProfileAvatar; saveState(); try{await dbUpsertUser(u)}catch(err){alert('Database Error: '+err.message);return} log('Update Profile',u.username); $('#profileDialog').close();render()}
+async function saveProfile(e){e.preventDefault();const current=currentUser();if(!current)return;const u={...current,name:$('#profileName').value,nickname:$('#profileNickname').value,email:$('#profileEmail').value};if($('#profilePassword').value)u.password=$('#profilePassword').value;else delete u.password;let uploaded=null;try{if(pendingProfileAvatar instanceof File){uploaded=await uploadStudioFile(pendingProfileAvatar,`avatars/${u.id}`);u.avatar=uploaded.url;u.avatar_path=uploaded.path}await dbUpsertUser(u)}catch(err){if(uploaded)await deleteStudioFile(uploaded.path).catch(()=>{});alert('لم يتم حفظ الملف الشخصي في Supabase: '+err.message);return}Object.assign(current,u);pendingProfileAvatar='';saveState();log('Update Profile',u.username);$('#profileDialog').close();render()}
 
 async function handleLogin(e){
   e.preventDefault();
   const err=$('#loginError'), btn=$('#loginBtn');
   err.textContent=''; btn.disabled=true; const oldText=btn.textContent; btn.textContent='جاري تسجيل الدخول...';
   try{
-    if(dbClient||dbOnline){try{dbOnline=true; await withTimeout(loadRemoteState({mergeLocal:false,syncLocal:false}),9000,'Supabase login'); setupRealtime(); setSync(realtimeChannel?'Supabase Realtime Ready':'Supabase Ready')}catch(ex){console.warn(ex); dbOnline=false; setSync('Supabase Timeout/Error - Local Mode')}}
     const un=$('#loginUsername').value.trim(), pw=$('#loginPassword').value.trim();
-    if(!un||!pw){err.textContent='لازم تدخل Username و Password';return}
-    const u=state.users.find(x=>String(x.username).toLowerCase()===un.toLowerCase()&&String(x.password)===pw);
-    if(!u){err.textContent='Username أو Password غير صحيح. جرب Brivviant / Brivviant@123456 لو أول مرة.';return}
-    setSession(u); $('#loginOverlay').classList.add('hidden'); log('Login','User logged in'); render();
+    if(!un||!pw){if(dbClient)await dbInsertLoginEvent({id:uid(),sessionId:uid(),username:un,success:false,failureReason:'missing_credentials',eventType:'login'}).catch(console.error);err.textContent='لازم تدخل Username و Password';return}
+    if(!dbClient){err.textContent='Supabase غير متصل. راجع config.js واتصال الإنترنت.';return}
+    try{dbOnline=true;await withTimeout(loadRemoteState({mergeLocal:false,syncLocal:false}),12000,'Supabase login');setupRealtime();setSync(realtimeChannel?'Supabase Realtime Ready':'Supabase Ready')}catch(ex){console.error(ex);dbOnline=false;setSync('Supabase Login Error');err.textContent='تعذر الاتصال بـ Supabase، لذلك لم يتم تسجيل الدخول.';return}
+    const sessionId=uid();
+    let u;
+    try{u=await dbLogin(un,pw,sessionId)}catch(ex){console.error(ex);err.textContent='تعذر التحقق من الدخول في Supabase. شغّل ملف SQL الجديد ثم حاول مرة أخرى.';return}
+    if(!u){err.textContent='Username أو Password غير صحيح.';return}
+    const loaded=state.users.find(x=>x.id===u.id);if(loaded)Object.assign(loaded,u);else state.users.push(u);u=loaded||u;
+    setSession(u,sessionId);$('#loginOverlay').classList.add('hidden');log('Login','User logged in',sessionId);render();
+  }catch(ex){console.error(ex);err.textContent='حدث خطأ أثناء تسجيل الدخول: '+ex.message;
   } finally {btn.disabled=false; btn.textContent=oldText;}
 }
 
+async function handleLogout(){const s=getSession(),u=currentUser();try{await dbInsertLoginEvent({id:uid(),sessionId:s?.sessionId,userId:u?.id,username:u?.username||s?.username||'',success:true,eventType:'logout'});log('Logout','User logged out',s?.sessionId||'')}catch(err){alert('تعذر تسجيل الخروج في Supabase: '+err.message);return}clearSession();$('#loginOverlay').classList.remove('hidden');render()}
+
+async function importStateToSupabase(imported){
+  requireDb();
+  for(const u of imported.users||[])await dbUpsertUser(u);
+  for(const e of imported.events||[])await dbUpsertEvent(e);
+  for(const t of imported.tasks||[])await dbUpsertTask(normalizeTask(t));
+  state=imported;saveState();log('Import JSON','State imported to Supabase');render();
+}
+
 function bind(){
-  $$('.nav-btn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab)); $('#profileBar').onclick=openProfile; $('#logoutBtn').onclick=()=>{log('Logout','User logged out');clearSession();$('#loginOverlay').classList.remove('hidden');render()}; $('#loginForm').onsubmit=handleLogin; $('#forgotPasswordBtn').onclick=()=>{$('#forgotResult').classList.add('hidden');$('#forgotIdentity').value=$('#loginUsername').value||'';$('#forgotDialog').showModal()}; $('#forgotForm').onsubmit=resetForgotPassword; $('#cancelForgotBtn').onclick=()=>$('#forgotDialog').close();
-  $('#quickTaskBtn')&&($('#quickTaskBtn').onclick=()=>openTask()); $('#quickEventBtn')&&($('#quickEventBtn').onclick=()=>openEvent()); $('#addTaskBtn').onclick=()=>openTask(); $('#taskForm').onsubmit=saveTask; $('#cancelTaskBtn').onclick=()=>$('#taskDialog').close(); $('#deleteTaskBtn').onclick=async()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); if(t&&confirm('حذف التاسك؟')){state.tasks=state.tasks.filter(x=>x.id!==id);saveState();try{await dbDelete('studio_event_tasks',id)}catch(err){alert('Database Error: '+err.message);return}log('Delete Task',t.title);$('#taskDialog').close();render()}};
-  $('#taskFiles').onchange=async e=>{pendingFiles=await Promise.all([...e.target.files].map(fileToData)); const id=$('#taskId').value; const current=state.tasks.find(t=>t.id===id)?.attachments||[]; renderAttachmentPreview([...current,...pendingFiles])};
+  $$('.nav-btn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab)); $('#profileBar').onclick=openProfile; $('#logoutBtn').onclick=handleLogout; $('#loginForm').onsubmit=handleLogin; $('#forgotPasswordBtn').onclick=()=>{$('#forgotResult').classList.add('hidden');$('#forgotIdentity').value=$('#loginUsername').value||'';$('#forgotDialog').showModal()}; $('#forgotForm').onsubmit=resetForgotPassword; $('#cancelForgotBtn').onclick=()=>$('#forgotDialog').close();
+  $('#quickTaskBtn')&&($('#quickTaskBtn').onclick=()=>openTask()); $('#quickEventBtn')&&($('#quickEventBtn').onclick=()=>openEvent()); $('#addTaskBtn').onclick=()=>openTask(); $('#taskForm').onsubmit=saveTask; $('#cancelTaskBtn').onclick=()=>$('#taskDialog').close(); $('#deleteTaskBtn').onclick=async()=>{const id=$('#taskId').value;const t=state.tasks.find(x=>x.id===id);if(t&&confirm('حذف التاسك؟')){try{await dbDelete('studio_event_tasks',id);for(const file of t.attachments||[])await deleteStudioFile(file.path).catch(console.warn)}catch(err){alert('Database Error: '+err.message);return}state.tasks=state.tasks.filter(x=>x.id!==id);saveState();log('Delete Task',t.title);$('#taskDialog').close();render()}};
+  $('#taskFiles').onchange=e=>{pendingFiles=[...e.target.files];const previews=pendingFiles.map(file=>({id:uid(),name:file.name,type:file.type,size:file.size,url:URL.createObjectURL(file),pending:true}));const id=$('#taskId').value;const current=state.tasks.find(t=>t.id===id)?.attachments||[];renderAttachmentPreview([...current,...previews])};
   $('#quickTaskBtn')&&($('#quickTaskBtn').onclick=()=>openTask('',currentBoardType()));
   $('#addTaskBtn')&&($('#addTaskBtn').onclick=()=>openTask('','event'));
   $('#addSocialTaskBtn')&&($('#addSocialTaskBtn').onclick=()=>openTask('','social'));
   $('#taskBoardType')&&($('#taskBoardType').onchange=updateTaskBoardFields);
-  $('#addEventBtn').onclick=()=>openEvent(); $('#eventForm').onsubmit=saveEvent; $('#cancelEventBtn').onclick=()=>$('#eventDialog').close(); $('#deleteEventBtn').onclick=async()=>{const id=$('#eventId').value;if(confirm('حذف الفعالية؟')){state.events=state.events.filter(e=>e.id!==id); saveState(); try{await dbDelete('studio_events',id)}catch(err){alert('Database Error: '+err.message);return} log('Delete Event',id); $('#eventDialog').close();render()}};
-  $('#addPersonBtn').onclick=()=>openAccount(); $('#accountForm').onsubmit=saveAccount; $('#cancelAccountBtn').onclick=()=>$('#accountDialog').close(); $('#deleteAccountBtn').onclick=async()=>{const id=$('#accountId').value;const u=state.users.find(x=>x.id===id); if(u&&confirm('حذف الحساب؟')){state.users=state.users.filter(x=>x.id!==id); saveState(); try{await dbDelete('studio_users',id)}catch(err){alert('Database Error: '+err.message);return} log('Delete Account',u.username); $('#accountDialog').close();render()}}; $('#generatePasswordBtn').onclick=()=>{$('#accountPassword').value='Bv@'+Math.random().toString(36).slice(2,10)};
-  $('#profileForm').onsubmit=saveProfile; $('#cancelProfileBtn').onclick=()=>$('#profileDialog').close(); $('#profileImage').onchange=async e=>{const f=e.target.files[0]; if(f){const d=await fileToData(f); pendingProfileAvatar=d.data; $('#avatarPreview').innerHTML=`<img src="${pendingProfileAvatar}">`}};
-  $('#aiBriefPdf').onchange=async e=>{const f=e.target.files[0]; if(!f)return; if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf'){ $('#aiBriefStatus').textContent='الملف لازم يكون PDF.'; return } pendingAiPdf=await fileToData(f); $('#aiBriefStatus').textContent='تم رفع PDF: '+f.name};
+  $('#addEventBtn').onclick=()=>openEvent(); $('#eventForm').onsubmit=saveEvent; $('#cancelEventBtn').onclick=()=>$('#eventDialog').close(); $('#deleteEventBtn').onclick=async()=>{const id=$('#eventId').value;if(confirm('حذف الفعالية؟')){try{await dbDelete('studio_events',id)}catch(err){alert('Database Error: '+err.message);return}state.events=state.events.filter(e=>e.id!==id);saveState();log('Delete Event',id);$('#eventDialog').close();render()}};
+  $('#addPersonBtn').onclick=()=>openAccount(); $('#accountForm').onsubmit=saveAccount; $('#cancelAccountBtn').onclick=()=>$('#accountDialog').close(); $('#deleteAccountBtn').onclick=async()=>{const id=$('#accountId').value;const u=state.users.find(x=>x.id===id);if(u&&confirm('حذف الحساب؟')){try{await dbDelete('studio_users',id)}catch(err){alert('Database Error: '+err.message);return}state.users=state.users.filter(x=>x.id!==id);saveState();log('Delete Account',u.username);$('#accountDialog').close();render()}}; $('#generatePasswordBtn').onclick=()=>{$('#accountPassword').value='Bv@'+Math.random().toString(36).slice(2,10)};
+  $('#profileForm').onsubmit=saveProfile; $('#cancelProfileBtn').onclick=()=>$('#profileDialog').close(); $('#profileImage').onchange=e=>{const f=e.target.files[0];if(f){pendingProfileAvatar=f;$('#avatarPreview').innerHTML=`<img src="${URL.createObjectURL(f)}">`}};
+  $('#aiBriefPdf').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf'){$('#aiBriefStatus').textContent='الملف لازم يكون PDF.';return}if(f.size>15*1024*1024){$('#aiBriefStatus').textContent='حجم PDF أكبر من 15MB. اضغط الملف ثم حاول مرة أخرى.';return}pendingAiPdf=await fileToData(f);pendingAiPdf.file=f;$('#aiBriefStatus').textContent='تم اختيار PDF: '+f.name};
   $('#analyzeBriefBtn').onclick=analyzeBrief; $('#copyBriefBtn').onclick=copyBrief; const saveEls=$('#saveBriefElementsBtn'); if(saveEls) saveEls.onclick=saveBriefElementsOnly; $('#closeAiBriefBtn').onclick=()=>$('#aiBriefDialog').close();
-  $('#searchInput').oninput=renderBoard; $('#eventFilter').onchange=renderBoard; $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='brivviant-studio-events-state.json';a.click();URL.revokeObjectURL(a.href);log('Export JSON','State exported')}; $('#importInput').onchange=e=>{const f=e.target.files[0];if(!f)return; const r=new FileReader();r.onload=()=>{state=JSON.parse(r.result);saveState();log('Import JSON','State imported');render()};r.readAsText(f)};
+  $('#searchInput').oninput=renderBoard; $('#eventFilter').onchange=renderBoard; $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='brivviant-studio-events-state.json';a.click();URL.revokeObjectURL(a.href);log('Export JSON','State exported')};
   $('#searchInput').oninput=renderBoards;
   $('#eventFilter').onchange=renderBoards;
-  $('#importInput').onchange=e=>{const f=e.target.files[0];if(!f)return; const r=new FileReader();r.onload=()=>{state=loadImportedState(JSON.parse(r.result));saveState();log('Import JSON','State imported');render()};r.readAsText(f)};
+  $('#importInput').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{await importStateToSupabase(loadImportedState(JSON.parse(r.result)))}catch(err){alert('فشل استيراد البيانات إلى Supabase: '+err.message)}};r.readAsText(f)};
 }
-async function boot(){bind(); await initDb(); if(getSession()&&currentUser()) $('#loginOverlay').classList.add('hidden'); else clearSession(); render()}
+async function boot(){bind();await initDb();if(dbOnline&&getSession()&&currentUser())$('#loginOverlay').classList.add('hidden');else{clearSession();$('#loginOverlay').classList.remove('hidden')}render()}
 boot();

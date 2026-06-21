@@ -6,9 +6,6 @@
 
 const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
 
-// Fallback key requested by owner. Best practice: also add GEMINI_API_KEY in Supabase Secrets.
-const DEFAULT_GEMINI_API_KEY = 'AIzaSyAhifBDB1sYH_V4uaK1SiFlN6kiVqi9lV0';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept',
@@ -46,13 +43,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const apiKey = (Deno.env.get('GEMINI_API_KEY') || DEFAULT_GEMINI_API_KEY || '').trim();
+    const apiKey = (Deno.env.get('GEMINI_API_KEY') || '').trim();
 
     if (!apiKey || apiKey === 'PUT_YOUR_GEMINI_API_KEY_HERE') {
       return json({
         ok: false,
         error: 'GEMINI_API_KEY is missing.',
-        fix: 'Add GEMINI_API_KEY in Supabase Edge Function Secrets or set DEFAULT_GEMINI_API_KEY inside index.ts.',
+        fix: 'Add GEMINI_API_KEY in Supabase Edge Function Secrets, then redeploy analyze-brief.',
       }, 500);
     }
 
@@ -117,6 +114,24 @@ Deno.serve(async (req) => {
           generationConfig: {
             temperature: 0.1,
             responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                summary: { type: 'STRING' },
+                required_elements: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+                  name: { type: 'STRING' }, description: { type: 'STRING' }, quantity: { type: 'STRING' }, dimensions: { type: 'STRING' }, notes: { type: 'STRING' },
+                }, required: ['name', 'description', 'quantity', 'dimensions', 'notes'] } },
+                dimensions_quantities: { type: 'ARRAY', items: { type: 'STRING' } },
+                materials_finishes: { type: 'ARRAY', items: { type: 'STRING' } },
+                deliverables: { type: 'ARRAY', items: { type: 'STRING' } },
+                deadlines: { type: 'ARRAY', items: { type: 'STRING' } },
+                special_requirements: { type: 'ARRAY', items: { type: 'STRING' } },
+                missing_questions: { type: 'ARRAY', items: { type: 'STRING' } },
+                production_notes: { type: 'ARRAY', items: { type: 'STRING' } },
+                raw: { type: 'STRING' },
+              },
+              required: ['summary', 'required_elements', 'dimensions_quantities', 'materials_finishes', 'deliverables', 'deadlines', 'special_requirements', 'missing_questions', 'production_notes', 'raw'],
+            },
           },
         }),
       }
@@ -260,15 +275,18 @@ function fallbackAnalysis(outputText: string) {
 
 function normalizeAnalysis(a: any) {
   const arr = (v: any) => Array.isArray(v) ? v : (v ? [String(v)] : []);
-  return {
-    summary: String(a?.summary || ''),
-    required_elements: Array.isArray(a?.required_elements) ? a.required_elements.map((x: any) => ({
-      name: String(x?.name || ''),
+  const element = (x: any) => typeof x === 'string'
+    ? { name: x, description: '', quantity: '', dimensions: '', notes: '' }
+    : {
+      name: String(x?.name || x?.title || x?.element || ''),
       description: String(x?.description || ''),
       quantity: String(x?.quantity || ''),
-      dimensions: String(x?.dimensions || ''),
+      dimensions: String(x?.dimensions || x?.size || ''),
       notes: String(x?.notes || ''),
-    })).filter((x: any) => x.name || x.description) : [],
+    };
+  return {
+    summary: String(a?.summary || ''),
+    required_elements: arr(a?.required_elements || a?.design_elements || a?.elements).map(element).filter((x: any) => x.name || x.description),
     dimensions_quantities: arr(a?.dimensions_quantities),
     materials_finishes: arr(a?.materials_finishes),
     deliverables: arr(a?.deliverables),

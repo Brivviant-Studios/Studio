@@ -20,6 +20,6 @@ supabase/functions/analyze-brief/index.ts
    لو ظهر Method not allowed فهذا طبيعي ومعناه أن الدالة شغالة وتنتظر POST.
 
 ملاحظات:
-- الكود يحتوي على fallback API Key داخل Edge Function حسب طلبك.
+- مفتاح Gemini لا يُكتب داخل الكود؛ يجب إضافته إلى Supabase Secrets فقط.
 - لا تضع هذا المفتاح داخل index.html أو script.js أو config.js.
-- لو سترفع المشروع إلى GitHub public، المفتاح سيكون ظاهرًا داخل ملف index.ts، والأفضل استخدام Secrets فقط.
+- يمكن رفع الكود بدون كشف المفتاح لأن الدالة تقرأه من Supabase Secrets فقط.

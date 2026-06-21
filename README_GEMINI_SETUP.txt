@@ -3,13 +3,13 @@ BRIVVIANT STUDIO — GEMINI AI BRIEF SETUP
 1) Get free Gemini API key from Google AI Studio.
 
 2) Add the key to Supabase Secrets:
-   supabase secrets set GEMINI_API_KEY=YOUR_KEY
+   supabase secrets set GEMINI_API_KEY=YOUR_KEY --project-ref viwaclirvokwoeqqivgr
 
 Optional model override:
    supabase secrets set GEMINI_MODEL=gemini-2.5-flash
 
 3) Deploy the Edge Function:
-   supabase functions deploy analyze-brief --no-verify-jwt
+   supabase functions deploy analyze-brief --no-verify-jwt --project-ref viwaclirvokwoeqqivgr
 
 4) Make sure config.js contains:
    AI_BRIEF_ENDPOINT: 'https://viwaclirvokwoeqqivgr.supabase.co/functions/v1/analyze-brief'

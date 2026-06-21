@@ -27,7 +27,7 @@
       <div><span id="statLate">0</span><small>Late</small></div>
     </div>
     <button id="logoutBtn" class="logout-btn">Logout</button>
-    <div id="syncState" class="sync-state">Local Ready</div>
+    <div id="syncState" class="sync-state">Supabase Connecting...</div>
   </aside>
 
   <main class="app">
@@ -148,7 +148,7 @@
       <input type="hidden" id="accountId" />
       <div class="two-col"><label>Name<input id="accountName" required /></label><label>Nickname<input id="accountNickname" /></label></div>
       <div class="two-col"><label>UserName<input id="accountUsername" required /></label><label>Email<input id="accountEmail" type="email" /></label></div>
-      <div class="two-col"><label>Password<input id="accountPassword" required /></label><label>Role<select id="accountRole"><option value="staff">Staff</option><option value="admin">Admin</option></select></label></div>
+      <div class="two-col"><label>Password<input id="accountPassword" /></label><label>Role<select id="accountRole"><option value="staff">Staff</option><option value="admin">Admin</option></select></label></div>
       <div class="dialog-actions"><button type="button" id="deleteAccountBtn" class="danger">حذف</button><button type="button" id="generatePasswordBtn">Generate</button><span></span><button type="button" id="cancelAccountBtn">إلغاء</button><button id="saveAccountBtn">حفظ</button></div>
     </form>
   </dialog>
@@ -193,7 +193,7 @@
       <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
       <button id="loginBtn" type="submit">Login</button>
       <button id="forgotPasswordBtn" type="button" class="link-btn">نسيت كلمة المرور؟</button>
-      <div id="loginHint" class="login-hint">لو التحميل من Supabase اتأخر، النظام هيدخل Local Mode تلقائيًا بدل ما يعلق.</div>
+      <div id="loginHint" class="login-hint">تسجيل الدخول وكل التعديلات والمرفقات تُحفظ في Supabase. عند انقطاع الاتصال لن ينفذ النظام حفظًا محليًا وهميًا.</div>
       <div id="loginError" class="login-error"></div>
     </form>
   </div>

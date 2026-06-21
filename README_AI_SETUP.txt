@@ -21,10 +21,10 @@ Then open config.js and confirm:
 AI_BRIEF_ENDPOINT points to:
 https://YOUR_PROJECT.supabase.co/functions/v1/analyze-brief
 
-Default login accounts in Local Mode:
+Default login account after running supabase-real-tables-setup.sql:
 Admin:
 username: Brivviant
-password: briv1234
+password: Brivviant@123456
 
 If Supabase is slow or unreachable:
-The app falls back to Local Mode so login does not hang.
+The app requires Supabase for login and saving; it does not claim a local save when the server is unavailable.
