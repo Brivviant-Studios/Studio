@@ -12,10 +12,11 @@
 .ai-output ul{margin:8px 18px;padding:0}
 .ai-output li{margin:6px 0}
 .ai-output .brief-block{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px;margin:10px 0;background:rgba(255,255,255,.035)}
+.brief-key-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}.brief-fact{display:flex;align-items:center;gap:11px;min-height:82px;padding:13px;border-radius:17px;border:1px solid rgba(142,241,182,.18);background:linear-gradient(145deg,rgba(142,241,182,.07),rgba(255,255,255,.018))}.brief-fact>span{display:grid;place-items:center;flex:0 0 35px;height:35px;border-radius:11px;background:rgba(142,241,182,.1);color:var(--mint);font-size:18px}.brief-fact div{display:grid;gap:5px}.brief-fact small{color:#73988d;font-size:9px;font-weight:900}.brief-fact b{color:#f0fff9;font-size:12px;line-height:1.45}.brief-fact.missing{border-style:dashed;opacity:.55}.brief-fact.missing b{color:#82968f;font-weight:700}
 .ai-brief-btn{margin-top:10px;width:100%;border-color:rgba(255,207,159,.35);color:var(--peach);background:rgba(255,207,159,.08)}
 .task-actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}
 .horizontal-card .row-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-@media(max-width:980px){.ai-actions-row,.horizontal-card .row-actions{display:grid;grid-template-columns:1fr}.ai-output{max-height:60vh}}
+@media(max-width:980px){.ai-actions-row,.horizontal-card .row-actions{display:grid;grid-template-columns:1fr}.ai-output{max-height:60vh}.brief-key-facts{grid-template-columns:1fr}}
 
 /* My Tasks delivery workflow */
 .mytask-card{grid-template-columns:minmax(240px,1.2fr) repeat(5,minmax(100px,.42fr)) minmax(320px,1.25fr);align-items:start}

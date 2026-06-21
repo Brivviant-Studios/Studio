@@ -118,6 +118,9 @@ Deno.serve(async (req) => {
               type: 'OBJECT',
               properties: {
                 summary: { type: 'STRING' },
+                event_location: { type: 'STRING' },
+                event_presentation_date: { type: 'STRING' },
+                client_delivery_date: { type: 'STRING' },
                 required_elements: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
                   name: { type: 'STRING' }, description: { type: 'STRING' }, quantity: { type: 'STRING' }, dimensions: { type: 'STRING' }, notes: { type: 'STRING' },
                 }, required: ['name', 'description', 'quantity', 'dimensions', 'notes'] } },
@@ -130,7 +133,7 @@ Deno.serve(async (req) => {
                 production_notes: { type: 'ARRAY', items: { type: 'STRING' } },
                 raw: { type: 'STRING' },
               },
-              required: ['summary', 'required_elements', 'dimensions_quantities', 'materials_finishes', 'deliverables', 'deadlines', 'special_requirements', 'missing_questions', 'production_notes', 'raw'],
+              required: ['summary', 'event_location', 'event_presentation_date', 'client_delivery_date', 'required_elements', 'dimensions_quantities', 'materials_finishes', 'deliverables', 'deadlines', 'special_requirements', 'missing_questions', 'production_notes', 'raw'],
             },
           },
         }),
@@ -198,6 +201,10 @@ function buildPrompt(input: { taskTitle: string; eventName: string; filename: st
 - التحليل سيتم حفظه داخل نفس الكارت في خانة العناصر.
 - ركز على عناصر الفعاليات والتصميم: بوابات، backdrops، counters، photo booth، wheel of fortune، screens، stages، signage، furniture، printing zones، kids zones، production، installation، activation zones، branding، media walls، giveaways.
 - استخرج المقاسات والكميات والخامات والمواعيد لو موجودة.
+- استخرج مكان/Location/Venue الفعالية حرفيًا لو مذكور، ولا تخمّن المدينة أو القاعة.
+- استخرج تاريخ تقديم أو إقامة أو تنفيذ الفعالية كما هو مكتوب في الكراسة لو موجود.
+- استخرج تاريخ تسليم التصميمات/المخرجات للعميل كما هو مكتوب لو موجود.
+- لو أي واحدة من المعلومات الثلاث السابقة غير مذكورة، أرجع empty string في خانتها.
 - لو في نقطة ناقصة أو غير واضحة، ضعها في missing_questions.
 - اكتب بالعربية الواضحة مع إبقاء المصطلحات الإنجليزية كما هي.
 - أي array يجب أن تكون array فعلًا حتى لو فارغة.
@@ -213,6 +220,9 @@ Task context:
 JSON schema المطلوب بالضبط:
 {
   "summary": "ملخص قصير للكراسة",
+  "event_location": "مكان الفعالية كما ورد في الكراسة أو empty string",
+  "event_presentation_date": "تاريخ تقديم/إقامة الفعالية كما ورد أو empty string",
+  "client_delivery_date": "تاريخ التسليم للعميل كما ورد أو empty string",
   "required_elements": [
     {
       "name": "اسم العنصر المطلوب",
@@ -261,6 +271,9 @@ function cleanJsonText(text: string) {
 function fallbackAnalysis(outputText: string) {
   return {
     summary: 'تم التحليل، لكن الرد لم يرجع JSON صالح بالكامل.',
+    event_location: '',
+    event_presentation_date: '',
+    client_delivery_date: '',
     required_elements: [],
     dimensions_quantities: [],
     materials_finishes: [],
@@ -286,6 +299,9 @@ function normalizeAnalysis(a: any) {
     };
   return {
     summary: String(a?.summary || ''),
+    event_location: String(a?.event_location || a?.location || a?.venue || ''),
+    event_presentation_date: String(a?.event_presentation_date || a?.event_date || a?.event_execution_date || ''),
+    client_delivery_date: String(a?.client_delivery_date || a?.delivery_date || a?.design_delivery_date || ''),
     required_elements: arr(a?.required_elements || a?.design_elements || a?.elements).map(element).filter((x: any) => x.name || x.description),
     dimensions_quantities: arr(a?.dimensions_quantities),
     materials_finishes: arr(a?.materials_finishes),

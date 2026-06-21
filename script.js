@@ -441,7 +441,10 @@ function briefAnalysisToHtml(analysis){
   if(typeof analysis==='string') return `<div class="brief-block">${esc(analysis).replace(/\n/g,'<br>')}</div>`;
   const itemText=x=>typeof x==='string'?x:[x?.name||x?.title,x?.description,x?.quantity&&`العدد: ${x.quantity}`,x?.dimensions&&`المقاس: ${x.dimensions}`,x?.notes].filter(Boolean).join(' — ');
   const section=(title,items)=>arr(items).length?`<h3>${esc(title)}</h3><ul>${arr(items).map(x=>`<li>${esc(itemText(x))}</li>`).join('')}</ul>`:'';
-  return `${analysis.summary?`<div class="brief-block"><b>Summary</b><br>${esc(analysis.summary)}</div>`:''}
+  const location=analysis.event_location||analysis.location||analysis.venue||'',eventDate=analysis.event_presentation_date||analysis.event_date||analysis.event_execution_date||'',clientDelivery=analysis.client_delivery_date||analysis.delivery_date||analysis.design_delivery_date||'';
+  const fact=(icon,label,value)=>`<article class="brief-fact ${value?'':'missing'}"><span>${icon}</span><div><small>${esc(label)}</small><b>${esc(value||'غير مذكور في الكراسة')}</b></div></article>`;
+  return `<div class="brief-key-facts">${fact('⌖','Location / مكان الفعالية',location)}${fact('◷','تاريخ تقديم الفعالية',eventDate)}${fact('✓','تاريخ التسليم للعميل',clientDelivery)}</div>
+    ${analysis.summary?`<div class="brief-block"><b>Summary</b><br>${esc(analysis.summary)}</div>`:''}
     ${section('العناصر المطلوبة من العميل',analysis.required_elements)}
     ${section('المقاسات / الكميات',analysis.dimensions_quantities)}
     ${section('الخامات / التشطيبات',analysis.materials_finishes)}
