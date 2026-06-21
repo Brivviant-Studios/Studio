@@ -73,6 +73,14 @@ create table if not exists studio_login_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists studio_sessions (
+  session_id text primary key,
+  user_id text not null references studio_users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now()+interval '12 hours'),
+  ended_at timestamptz
+);
+
 -- Passwords are stored as bcrypt hashes. Existing plaintext rows are migrated once.
 create or replace function public.studio_hash_password()
 returns trigger
@@ -127,6 +135,9 @@ begin
      case when v_user.id is null then 'invalid_credentials' else null end,'login',left(coalesce(p_user_agent,''),1000));
 
   if v_user.id is not null then
+    insert into public.studio_sessions(session_id,user_id,created_at,expires_at,ended_at)
+    values (p_session_id,v_user.id,now(),now()+interval '12 hours',null)
+    on conflict (session_id) do update set user_id=excluded.user_id,created_at=now(),expires_at=now()+interval '12 hours',ended_at=null;
     return query select v_user.id,v_user.name,v_user.nickname,v_user.username,v_user.email,v_user.role,v_user.avatar;
   end if;
 end;
@@ -146,13 +157,91 @@ alter table studio_event_tasks add column if not exists ai_brief_pdf_path text;
 alter table studio_event_tasks add column if not exists ai_brief_pdf_url text;
 alter table studio_event_tasks add column if not exists ai_brief_analyzed_at timestamptz;
 
+-- Session-backed authorization. Task writes are only exposed through admin RPCs.
+create or replace function public.studio_session_user(p_session_id text,p_admin_only boolean default false)
+returns text language plpgsql security definer set search_path=public as $$
+declare v_user_id text;
+begin
+  select s.user_id into v_user_id
+  from public.studio_sessions s join public.studio_users u on u.id=s.user_id
+  where s.session_id=p_session_id and s.ended_at is null and s.expires_at>now()
+    and (not p_admin_only or u.role='admin');
+  if v_user_id is null then raise exception 'Not authorized or session expired' using errcode='42501'; end if;
+  return v_user_id;
+end;
+$$;
+
+create or replace function public.studio_admin_save_task(p_session_id text,p_task jsonb)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+  perform public.studio_session_user(p_session_id,true);
+  insert into public.studio_event_tasks
+    (id,board_type,event_id,title,column_id,owner,owner_name,priority,due,tags,notes,delay_reason,attachments,ai_brief_analysis,design_elements,ai_brief_pdf_name,ai_brief_pdf_path,ai_brief_pdf_url,ai_brief_analyzed_at,drive_link,updated_at)
+  values
+    (p_task->>'id',coalesce(p_task->>'board_type','event'),nullif(p_task->>'event_id',''),coalesce(p_task->>'title',''),coalesce(p_task->>'column_id','todo'),p_task->>'owner',p_task->>'owner_name',p_task->>'priority',nullif(p_task->>'due','')::date,p_task->>'tags',p_task->>'notes',p_task->>'delay_reason',coalesce(p_task->'attachments','[]'::jsonb),p_task->'ai_brief_analysis',coalesce(p_task->'design_elements','[]'::jsonb),p_task->>'ai_brief_pdf_name',p_task->>'ai_brief_pdf_path',p_task->>'ai_brief_pdf_url',nullif(p_task->>'ai_brief_analyzed_at','')::timestamptz,p_task->>'drive_link',now())
+  on conflict (id) do update set
+    board_type=excluded.board_type,event_id=excluded.event_id,title=excluded.title,column_id=excluded.column_id,owner=excluded.owner,owner_name=excluded.owner_name,priority=excluded.priority,due=excluded.due,tags=excluded.tags,notes=excluded.notes,delay_reason=excluded.delay_reason,attachments=excluded.attachments,ai_brief_analysis=excluded.ai_brief_analysis,design_elements=excluded.design_elements,ai_brief_pdf_name=excluded.ai_brief_pdf_name,ai_brief_pdf_path=excluded.ai_brief_pdf_path,ai_brief_pdf_url=excluded.ai_brief_pdf_url,ai_brief_analyzed_at=excluded.ai_brief_analyzed_at,drive_link=excluded.drive_link,updated_at=now();
+end;
+$$;
+
+create or replace function public.studio_admin_delete_task(p_session_id text,p_task_id text)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+  perform public.studio_session_user(p_session_id,true);
+  delete from public.studio_event_tasks where id=p_task_id;
+end;
+$$;
+
+create or replace function public.studio_save_activity_log(p_session_id text,p_log jsonb)
+returns void language plpgsql security definer set search_path=public as $$
+declare v_user public.studio_users%rowtype;
+begin
+  select u.* into v_user from public.studio_users u where u.id=public.studio_session_user(p_session_id,false);
+  insert into public.studio_activity_logs(id,action,details,target,actor,username,role,created_at)
+  values (coalesce(nullif(p_log->>'id',''),gen_random_uuid()::text),p_log->>'action',p_log->>'details',p_log->>'target',v_user.name,v_user.username,v_user.role,now())
+  on conflict (id) do nothing;
+end;
+$$;
+
+create or replace function public.studio_get_activity_logs(p_session_id text,p_limit integer default 1000)
+returns setof public.studio_activity_logs
+language plpgsql security definer set search_path=public as $$
+begin
+  perform public.studio_session_user(p_session_id,true);
+  return query select l.* from public.studio_activity_logs l order by l.created_at desc limit greatest(1,least(coalesce(p_limit,1000),1000));
+end;
+$$;
+
+create or replace function public.studio_logout(p_session_id text,p_user_agent text default '')
+returns void language plpgsql security definer set search_path=public as $$
+declare v_user public.studio_users%rowtype;
+begin
+  select u.* into v_user from public.studio_users u join public.studio_sessions s on s.user_id=u.id where s.session_id=p_session_id and s.ended_at is null;
+  if v_user.id is null then raise exception 'Session not found' using errcode='42501'; end if;
+  update public.studio_sessions set ended_at=now() where session_id=p_session_id;
+  insert into public.studio_login_events(id,session_id,user_id,username,success,event_type,user_agent)
+  values(gen_random_uuid()::text,p_session_id,v_user.id,v_user.username,true,'logout',left(coalesce(p_user_agent,''),1000));
+end;
+$$;
+
+revoke all on function public.studio_session_user(text,boolean) from public;
+revoke all on function public.studio_admin_save_task(text,jsonb) from public;
+revoke all on function public.studio_admin_delete_task(text,text) from public;
+revoke all on function public.studio_save_activity_log(text,jsonb) from public;
+revoke all on function public.studio_get_activity_logs(text,integer) from public;
+revoke all on function public.studio_logout(text,text) from public;
+grant execute on function public.studio_admin_save_task(text,jsonb) to anon;
+grant execute on function public.studio_admin_delete_task(text,text) to anon;
+grant execute on function public.studio_save_activity_log(text,jsonb) to anon;
+grant execute on function public.studio_get_activity_logs(text,integer) to anon;
+grant execute on function public.studio_logout(text,text) to anon;
+
 -- Default admin account
 insert into studio_users (id,name,nickname,username,password,email,role,avatar)
 values ('admin-brivviant','Brivviant','Main Admin','Brivviant','Brivviant@123456','','admin','')
 on conflict (username) do update set
   name=excluded.name,
   nickname=excluded.nickname,
-  password=excluded.password,
   role='admin',
   updated_at=now();
 
@@ -160,15 +249,13 @@ insert into studio_events (id,name,client,event_date,notes)
 values ('evt-demo','Internal Studio Event','Brivviant',current_date,'Demo board')
 on conflict (id) do nothing;
 
--- Remove the UNRESTRICTED warning by enabling RLS.
--- IMPORTANT: Because this app uses custom username/password login from the frontend,
--- the policies below allow the anon frontend key to read/write these tables.
--- This fixes Supabase warnings but is not as secure as Supabase Auth.
+-- RLS: tasks and activity logs are read-only through REST; writes use checked RPCs.
 alter table studio_users enable row level security;
 alter table studio_events enable row level security;
 alter table studio_event_tasks enable row level security;
 alter table studio_activity_logs enable row level security;
 alter table studio_login_events enable row level security;
+alter table studio_sessions enable row level security;
 
 drop policy if exists "studio_users_frontend_access" on studio_users;
 drop policy if exists "studio_events_frontend_access" on studio_events;
@@ -188,10 +275,14 @@ create policy "studio_events_frontend_access" on studio_events
 for all to anon using (true) with check (true);
 
 create policy "studio_event_tasks_frontend_access" on studio_event_tasks
-for all to anon using (true) with check (true);
+for select to anon using (true);
 
 create policy "studio_activity_logs_frontend_access" on studio_activity_logs
-for all to anon using (true) with check (true);
+for select to anon using (false);
+
+revoke insert,update,delete on table public.studio_event_tasks from anon;
+revoke select,insert,update,delete on table public.studio_activity_logs from anon;
+grant select on table public.studio_event_tasks to anon;
 
 create policy "studio_login_events_frontend_access" on studio_login_events
 for insert to anon with check (true);
@@ -211,7 +302,7 @@ create policy "studio_files_frontend_insert" on storage.objects for insert to an
 create policy "studio_files_frontend_update" on storage.objects for update to anon using (bucket_id='studio-files') with check (bucket_id='studio-files');
 create policy "studio_files_frontend_delete" on storage.objects for delete to anon using (bucket_id='studio-files');
 
--- Delivery link required by the app before a Staff member can mark a task as Done
+-- Optional delivery link. Only an Admin can change the task or its status.
 alter table studio_event_tasks add column if not exists drive_link text;
 update studio_event_tasks set board_type='event' where board_type is null;
 

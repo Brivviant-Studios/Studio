@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#061312" />
   <title>Brivviant Studio Events Tasks</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -104,6 +105,7 @@
   <dialog id="taskDialog">
     <form method="dialog" id="taskForm">
       <h2 id="taskDialogTitle">Task Card</h2>
+      <div id="taskPermissionNote" class="permission-note hidden">وضع العرض فقط — تعديل التاسك متاح للـAdmin فقط</div>
       <input type="hidden" id="taskId" />
       <div class="two-col">
         <label>Board<select id="taskBoardType"><option value="event">Event Board</option><option value="social">Social Board</option></select></label>

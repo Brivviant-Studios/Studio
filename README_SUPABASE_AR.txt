@@ -8,12 +8,15 @@
 - سجل الحركات محفوظ في studio_activity_logs.
 - مرفقات التاسكات وصور الحسابات وملفات PDF الخاصة بالبريف محفوظة في Storage bucket باسم studio-files.
 - استخراج عناصر البريف وحفظها يتم داخل نفس صف التاسك في design_elements و ai_brief_analysis.
+- تعديل/إنشاء/حذف التاسكات وحالتها ومرفقاتها متاح للـAdmin فقط، ومفروض من قاعدة البيانات عبر جلسة صالحة.
+- الـStaff يرى التاسكات المخصصة له في وضع العرض فقط.
+- الـActivity Log يُكتب ويُقرأ من Supabase عبر RPC، والقراءة للـAdmin فقط.
 
 خطوات التشغيل الإلزامية
 -----------------------
 
 1) افتح Supabase Dashboard للمشروع ثم SQL Editor.
-2) شغّل ملف supabase-real-tables-setup.sql كاملًا مرة واحدة.
+2) شغّل ملف supabase-real-tables-setup.sql كاملًا. أعد تشغيله حتى لو شغّلت إصدارًا أقدم، لإضافة جلسات الصلاحيات وRPC الجديدة.
 3) أضف مفتاح Gemini إلى Edge Function Secrets (لا تضعه في ملفات الواجهة):
    supabase secrets set GEMINI_API_KEY=YOUR_GEMINI_KEY --project-ref viwaclirvokwoeqqivgr
 4) انشر دالة التحليل المحدثة:
