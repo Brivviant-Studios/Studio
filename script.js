@@ -54,7 +54,8 @@ async function loadRemoteState(options={}){
     dbClient.from('studio_event_tasks').select('*').order('created_at',{ascending:true}),
     logsRequest
   ]);
-  const err=[u.error,e.error,t.error,l.error].find(Boolean); if(err) throw err;
+  const err=[u.error,e.error,t.error].find(Boolean); if(err) throw err;
+  if(l.error)console.warn('Activity logs will load after a valid Admin session:',l.error);
   const local=loadState();
   const remoteUsers=(u.data||[]).map(userFromDb), remoteEvents=(e.data||[]).map(eventFromDb), remoteTasks=(t.data||[]).map(taskFromDb), remoteLogs=(l.data||[]).map(logFromDb);
   state.users=mergeLocal?mergeById(local.users,remoteUsers):remoteUsers;
@@ -70,7 +71,7 @@ function requireDb(){if(!dbClient)throw new Error('Supabase is not connected. Ch
 async function dbUpsertUser(u){requireDb();const existing=state.users.some(x=>x.id===u.id);const payload=userToDb(u);const {error}=existing?await dbClient.from('studio_users').update(payload).eq('id',u.id):await dbClient.from('studio_users').insert(payload);if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(500);}
 async function dbUpsertEvent(e){requireDb(); const {error}=await dbClient.from('studio_events').upsert(eventToDb(e)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
 async function dbUpsertTask(t){requireDb();const sessionId=getSession()?.sessionId;if(!sessionId)throw new Error('جلسة الدخول غير صالحة. سجل الدخول مرة أخرى.');const {error}=await dbClient.rpc('studio_admin_save_task',{p_session_id:sessionId,p_task:taskToDb(t)});if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(500);}
-async function dbInsertLog(l){requireDb();const sessionId=getSession()?.sessionId;if(!sessionId)throw new Error('No active Supabase session for activity log.');const {error}=await dbClient.rpc('studio_save_activity_log',{p_session_id:sessionId,p_log:logToDb(l)});if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(700);}
+async function dbInsertLog(l){requireDb();const sessionId=getSession()?.sessionId;if(!sessionId)return;let {error}=await dbClient.rpc('studio_save_activity_log',{p_session_id:sessionId,p_log:logToDb(l)});if(error?.code==='PGRST202')({error}=await dbClient.from('studio_activity_logs').insert(logToDb(l)));if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(700);}
 async function dbInsertLoginEvent(event){
   requireDb();
   const {error}=await dbClient.from('studio_login_events').insert({
@@ -86,7 +87,8 @@ async function dbLogin(username,password,sessionId){
   const row=Array.isArray(data)?data[0]:data;
   return row?userFromDb(row):null;
 }
-async function dbLogout(sessionId){requireDb();const {error}=await dbClient.rpc('studio_logout',{p_session_id:sessionId,p_user_agent:navigator.userAgent||''});if(error){dbOnline=false;throw error;}}
+async function dbValidateSession(sessionId){if(!sessionId||!dbClient)return false;const {data,error}=await dbClient.rpc('studio_validate_session',{p_session_id:sessionId});if(error){if(error.code==='PGRST202')return true;console.warn('Session validation failed:',error);return false}return data===true}
+async function dbLogout(sessionId){if(!sessionId||!dbClient)return;const s=getSession(),u=currentUser();const {error}=await dbClient.rpc('studio_logout',{p_session_id:sessionId,p_user_agent:navigator.userAgent||''});if(error?.code==='PGRST202'){await dbInsertLoginEvent({id:uid(),sessionId,userId:u?.id,username:u?.username||s?.username||'',success:true,eventType:'logout'});return}if(error){dbOnline=false;throw error;}}
 async function dbDelete(table,id){requireDb();let error;if(table==='studio_event_tasks'){const sessionId=getSession()?.sessionId;if(!sessionId)throw new Error('جلسة الدخول غير صالحة.');({error}=await dbClient.rpc('studio_admin_delete_task',{p_session_id:sessionId,p_task_id:id}));}else({error}=await dbClient.from(table).delete().eq('id',id));if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(500);}
 function safeObjectName(name){return String(name||'file').normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(-120)||'file'}
 async function uploadStudioFile(file,folder){
@@ -232,6 +234,7 @@ function isLate(t){return t.column==='late'||(t.due&&t.due<today()&&t.column!=='
 function log(action,details='',target=''){
   const entry={id:uid(),action,details,target,actor:currentUser()?.name||'Unknown',username:currentUser()?.username||'',role:currentUser()?.role||'',createdAt:new Date().toISOString(),createdAtText:nowText()};
   state.logs.unshift(entry);state.logs=state.logs.slice(0,1000);saveState();renderLogs();
+  if(!getSession()?.sessionId)return Promise.resolve(entry);
   const operation=logQueue.then(()=>dbInsertLog(entry));
   logQueue=operation.catch(err=>{console.error('Activity log was not saved:',err);setSync('Supabase Log Error')});
   return operation;
@@ -306,7 +309,28 @@ function renderDesignElements(elements,compact=false){
     return `<div class="element-row"><b>${safe(name)}</b>${extra?`<small>${safe(extra)}</small>`:''}${(!compact&&desc)?`<p>${safe(desc)}</p>`:''}</div>`;
   }).join('')}${compact&&list.length>3?`<small class="more-elements">+ ${list.length-3} عناصر أخرى</small>`:''}</div>`;
 }
+function renderDesignElementsTable(elements){
+  const list=Array.isArray(elements)?elements.filter(Boolean):[];
+  if(!list.length)return '';
+  return `<table class="elements-table"><thead><tr><th>#</th><th>العنصر</th><th>الوصف</th><th>الكمية</th><th>المقاسات</th><th>ملاحظات</th></tr></thead><tbody>${list.map((item,index)=>{
+    const el=typeof item==='string'?{name:item}:item||{};
+    return `<tr><td><span class="element-index">${String(index+1).padStart(2,'0')}</span></td><td><b>${safe(el.name||el.title||'عنصر')}</b></td><td>${safe(el.description||'—')}</td><td>${safe(el.quantity||'—')}</td><td>${safe(el.dimensions||el.size||'—')}</td><td>${safe(el.notes||'—')}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
 function taskContextName(t){return normalizeBoardType(t.boardType)==='social'?'Social Board':getEventName(t.eventId)}
+function renderTaskExperience(t){
+  const task=t||{title:'تاسك جديد',boardType:currentBoardType(),column:'todo',priority:'Normal',attachments:[],designElements:[]};
+  const type=normalizeBoardType(task.boardType),event=state.events.find(x=>x.id===task.eventId),project=type==='social'?'Social Content':(event?.name||'مشروع جديد');
+  const status=COLUMNS.find(c=>c.id===task.column)?.title||'To Do',owner=task.ownerName||getUserName(task.owner)||'غير محدد',tags=String(task.tags||'').split(/[,،]/).map(x=>x.trim()).filter(Boolean);
+  const flow=COLUMNS,activeIndex=Math.max(0,flow.findIndex(c=>c.id===task.column));
+  $('#taskDetailHero').innerHTML=`<div class="task-hero-glow"></div><div class="task-hero-copy"><div class="task-hero-kicker"><span>${safe(type==='social'?'SOCIAL BOARD':'EVENT PROJECT')}</span><span class="task-status-dot">${safe(status)}</span></div><small>المشروع</small><h3>${safe(project)}</h3><h1>${safe(task.title||'بدون عنوان')}</h1><div class="task-hero-sub"><span>${safe(event?.client||'Brivviant Studio')}</span><span>•</span><span>${safe(task.due||'بدون موعد')}</span></div></div><div class="task-progress">${flow.map((c,i)=>`<div class="task-progress-step ${i<=activeIndex?'active':''} ${c.id===task.column?'current':''}"><i></i><span>${safe(c.title)}</span></div>`).join('')}</div>`;
+  $('#taskDetailOverview').innerHTML=`<div class="task-facts"><article><small>المسؤول</small><b>${safe(owner)}</b><span>Assigned owner</span></article><article><small>موعد التسليم</small><b>${safe(task.due||'غير محدد')}</b><span>Due date</span></article><article><small>الأولوية</small><b class="priority-text ${priorityClass(task.priority)}">${safe(task.priority||'Normal')}</b><span>Priority level</span></article><article><small>المرفقات</small><b>${(task.attachments||[]).length}</b><span>Files & references</span></article></div><div class="task-story-grid"><article class="task-brief-card"><small>PROJECT BRIEF</small><h3>تفاصيل التاسك</h3><p>${safe(task.notes||'لا توجد تفاصيل إضافية لهذا التاسك حتى الآن.')}</p>${tags.length?`<div class="task-tags">${tags.map(tag=>`<span>#${safe(tag)}</span>`).join('')}</div>`:''}</article><aside class="task-delivery-card"><small>DELIVERY</small><h3>${task.driveLink?'جاهز للتسليم':'قيد التنفيذ'}</h3>${task.driveLink?`<a href="${safe(task.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم ↗</a>`:'<p>سيظهر رابط التسليم هنا عند إضافته.</p>'}${task.delayReason?`<div class="delay-insight"><b>سبب التأخير</b><span>${safe(task.delayReason)}</span></div>`:''}</aside></div>`;
+}
+function previewTaskExperience(){
+  if(!isAdmin()||!$('#taskDialog')?.open)return;
+  const current=state.tasks.find(x=>x.id===$('#taskId').value)||{},owner=state.users.find(u=>u.id===$('#taskOwner').value);
+  renderTaskExperience({...current,title:$('#taskTitle').value,boardType:$('#taskBoardType').value,eventId:$('#taskEvent').value,column:$('#taskColumn').value,owner:owner?.id||'',ownerName:owner?(owner.nickname||owner.name):'',priority:$('#taskPriority').value,due:$('#taskDue').value,tags:$('#taskTags').value,notes:$('#taskNotes').value,driveLink:$('#taskDriveLink').value});
+}
 function attachmentUrl(a){return a?.url||a?.data||''}
 function taskCard(t){const atts=t.attachments||[];const contextLabel=normalizeBoardType(t.boardType)==='social'?'Board':'Event';return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>${contextLabel}</small><b>${safe(taskContextName(t))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${renderDesignElements(t.designElements,true)}${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${safe(attachmentUrl(a))}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div>${t.driveLink?`<div class="task-drive"><small>Drive</small><a href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a></div>`:''}<div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
 function renderMyTasks(){
@@ -481,23 +505,25 @@ function updateTaskBoardFields(){
 }
 function switchTab(tab){if(!isAdmin()&&['events','team','logs'].includes(tab)) tab='mytasks'; if(tab==='board'||tab==='social')activeBoardType=tab==='social'?'social':'event'; $$('.tab').forEach(s=>s.classList.toggle('active',s.id===tab));$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$('#pageTitle').textContent=$(`.nav-btn[data-tab="${tab}"]`)?.textContent||tab}
 function setTaskDialogReadOnly(readOnly){
-  ['taskBoardType','taskEvent','taskColumn','taskTitle','taskOwner','taskPriority','taskDue','taskTags','taskNotes','taskFiles'].forEach(id=>{const el=$(`#${id}`);if(el)el.disabled=readOnly});
+  ['taskBoardType','taskEvent','taskColumn','taskTitle','taskOwner','taskPriority','taskDue','taskTags','taskNotes','taskDriveLink','taskFiles'].forEach(id=>{const el=$(`#${id}`);if(el)el.disabled=readOnly});
   $('#saveTaskBtn').classList.toggle('hidden',readOnly);
   $('#taskPermissionNote').classList.toggle('hidden',!readOnly);
   $('#taskFiles')?.closest('label')?.classList.toggle('hidden',readOnly);
+  $('#taskEditorFields').classList.toggle('hidden',readOnly);
 }
 function openTask(id='',boardType=currentBoardType()){
   if(!id&&!isAdmin()){alert('إنشاء التاسكات متاح للـAdmin فقط.');return}
-  const t=state.tasks.find(x=>x.id===id)||null; const type=normalizeBoardType(t?.boardType||boardType); pendingFiles=[];$('#taskDialogTitle').textContent=isAdmin()?(t?'تعديل التاسك':'إنشاء تاسك جديد'):'تفاصيل التاسك'; $('#taskId').value=t?.id||''; $('#taskBoardType').value=type; $('#taskTitle').value=t?.title||''; $('#taskEvent').value=t?.eventId||state.events[0]?.id||''; $('#taskColumn').value=t?.column||'todo'; $('#taskOwner').value=t?.owner||currentUser()?.id||''; $('#taskPriority').value=t?.priority||'Normal'; $('#taskDue').value=t?.due||''; $('#taskTags').value=t?.tags||''; $('#taskNotes').value=t?.notes||''; $('#taskDelayReason').value=t?.delayReason||''; $('#deleteTaskBtn').classList.toggle('hidden',!t||!isAdmin());
+  const t=state.tasks.find(x=>x.id===id)||null; const type=normalizeBoardType(t?.boardType||boardType); pendingFiles=[];$('#taskDialogTitle').textContent=isAdmin()?(t?'تعديل التاسك':'إنشاء تاسك جديد'):'تفاصيل التاسك'; $('#taskId').value=t?.id||''; $('#taskBoardType').value=type; $('#taskTitle').value=t?.title||''; $('#taskEvent').value=t?.eventId||state.events[0]?.id||''; $('#taskColumn').value=t?.column||'todo'; $('#taskOwner').value=t?.owner||currentUser()?.id||''; $('#taskPriority').value=t?.priority||'Normal'; $('#taskDue').value=t?.due||''; $('#taskTags').value=t?.tags||''; $('#taskNotes').value=t?.notes||'';$('#taskDriveLink').value=t?.driveLink||''; $('#taskDelayReason').value=t?.delayReason||''; $('#deleteTaskBtn').classList.toggle('hidden',!t||!isAdmin());
   updateTaskBoardFields();
   $('#delayReasonWrap').classList.add('hidden'); $('#taskDelayReason').disabled=true;
-  const ev=$('#taskElementsView'); if(ev){ev.classList.toggle('empty',!(t?.designElements||[]).length); ev.innerHTML=renderDesignElements(t?.designElements||[],false)||'لم يتم استخراج عناصر بعد';}
+  renderTaskExperience(t);const ev=$('#taskElementsView'); if(ev){ev.classList.toggle('empty',!(t?.designElements||[]).length); ev.innerHTML=renderDesignElementsTable(t?.designElements||[])||'لم يتم استخراج عناصر بعد';}
   setTaskDialogReadOnly(!isAdmin());renderAttachmentPreview(t?.attachments||[]); $('#taskDialog').showModal();
 }
 function renderAttachmentPreview(atts){const wrap=$('#taskAttachmentsPreview'); wrap.innerHTML=atts.map(a=>`<div class="attachment-card" data-att="${a.id}">${a.type?.startsWith('image/')?`<img src="${safe(attachmentUrl(a))}" alt="">`:`<div class="pdf-chip">PDF</div>`}<a href="${safe(attachmentUrl(a))}" target="_blank" rel="noopener">فتح ${safe(a.name)}</a>${isAdmin()&&!a.pending?`<button type="button" data-del-att="${a.id}">حذف</button>`:''}</div>`).join(''); wrap.querySelectorAll('[data-del-att]').forEach(b=>b.onclick=async()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); const file=t?.attachments?.find(a=>a.id===b.dataset.delAtt); if(!t||!file)return; const next={...t,attachments:t.attachments.filter(a=>a.id!==file.id),updatedAt:new Date().toISOString()}; try{await dbUpsertTask(next);await deleteStudioFile(file.path)}catch(err){alert('لم يتم حذف الملف من Supabase: '+err.message);return}Object.assign(t,next);saveState();log('Delete Attachment',file.name,t.title);renderAttachmentPreview(t.attachments);render();})}
 async function saveTask(e){e.preventDefault(); const id=$('#taskId').value; const owner=state.users.find(u=>u.id===$('#taskOwner').value); const type=normalizeBoardType($('#taskBoardType').value); const current=state.tasks.find(x=>x.id===id); const isNew=!current; const t={...(current||{id:uid(),attachments:[]})};
   if(!isAdmin()){alert('تعديل التاسك متاح للـAdmin فقط.');log('Blocked Edit','Admin only',$('#taskTitle').value);return}
-  t.title=$('#taskTitle').value.trim(); t.boardType=type; t.eventId=type==='event'?$('#taskEvent').value:''; t.column=$('#taskColumn').value; t.owner=owner?.id||$('#taskOwner').value; t.ownerName=owner?(owner.nickname||owner.name):''; t.priority=$('#taskPriority').value; t.due=$('#taskDue').value; t.tags=$('#taskTags').value; t.notes=$('#taskNotes').value; t.updatedAt=new Date().toISOString();
+  t.title=$('#taskTitle').value.trim(); t.boardType=type; t.eventId=type==='event'?$('#taskEvent').value:''; t.column=$('#taskColumn').value; t.owner=owner?.id||$('#taskOwner').value; t.ownerName=owner?(owner.nickname||owner.name):''; t.priority=$('#taskPriority').value; t.due=$('#taskDue').value; t.tags=$('#taskTags').value; t.notes=$('#taskNotes').value;t.driveLink=$('#taskDriveLink').value.trim(); t.updatedAt=new Date().toISOString();
+  if(t.driveLink&&!/^https?:\/\//i.test(t.driveLink)){alert('Drive Link لازم يبدأ بـ http أو https.');return}
   const uploaded=[];
   try{
     setSync(pendingFiles.length?'Uploading files to Supabase...':'Saving to Supabase...');
@@ -535,7 +561,7 @@ async function handleLogin(e){
   } finally {btn.disabled=false; btn.textContent=oldText;}
 }
 
-async function handleLogout(){const s=getSession();try{await log('Logout','User logged out',s?.sessionId||'');await dbLogout(s?.sessionId)}catch(err){alert('تعذر تسجيل الخروج أو حفظ الـLog في Supabase: '+err.message);return}clearSession();$('#loginOverlay').classList.remove('hidden');render()}
+async function handleLogout(){const s=getSession();try{if(s?.sessionId){await log('Logout','User logged out',s.sessionId).catch(console.warn);await dbLogout(s.sessionId).catch(console.warn)}}finally{clearSession();$('#loginOverlay').classList.remove('hidden');$('#loginPassword').value='';$('#loginError').textContent='';setSync(dbOnline?'Supabase Ready':'Supabase غير متصل');render()}}
 
 async function importStateToSupabase(imported){
   requireDb();
@@ -552,7 +578,9 @@ function bind(){
   $('#quickTaskBtn')&&($('#quickTaskBtn').onclick=()=>openTask('',currentBoardType()));
   $('#addTaskBtn')&&($('#addTaskBtn').onclick=()=>openTask('','event'));
   $('#addSocialTaskBtn')&&($('#addSocialTaskBtn').onclick=()=>openTask('','social'));
-  $('#taskBoardType')&&($('#taskBoardType').onchange=updateTaskBoardFields);
+  $('#taskBoardType')&&($('#taskBoardType').onchange=()=>{updateTaskBoardFields();previewTaskExperience()});
+  ['taskEvent','taskColumn','taskOwner','taskPriority','taskDue'].forEach(id=>{$(`#${id}`).onchange=previewTaskExperience});
+  ['taskTitle','taskTags','taskNotes','taskDriveLink'].forEach(id=>{$(`#${id}`).oninput=previewTaskExperience});
   $('#addEventBtn').onclick=()=>openEvent(); $('#eventForm').onsubmit=saveEvent; $('#cancelEventBtn').onclick=()=>$('#eventDialog').close(); $('#deleteEventBtn').onclick=async()=>{const id=$('#eventId').value;if(confirm('حذف الفعالية؟')){try{await dbDelete('studio_events',id)}catch(err){alert('Database Error: '+err.message);return}state.events=state.events.filter(e=>e.id!==id);saveState();log('Delete Event',id);$('#eventDialog').close();render()}};
   $('#addPersonBtn').onclick=()=>openAccount(); $('#accountForm').onsubmit=saveAccount; $('#cancelAccountBtn').onclick=()=>$('#accountDialog').close(); $('#deleteAccountBtn').onclick=async()=>{const id=$('#accountId').value;const u=state.users.find(x=>x.id===id);if(u&&confirm('حذف الحساب؟')){try{await dbDelete('studio_users',id)}catch(err){alert('Database Error: '+err.message);return}state.users=state.users.filter(x=>x.id!==id);saveState();log('Delete Account',u.username);$('#accountDialog').close();render()}}; $('#generatePasswordBtn').onclick=()=>{$('#accountPassword').value='Bv@'+Math.random().toString(36).slice(2,10)};
   $('#profileForm').onsubmit=saveProfile; $('#cancelProfileBtn').onclick=()=>$('#profileDialog').close(); $('#profileImage').onchange=e=>{const f=e.target.files[0];if(f){pendingProfileAvatar=f;$('#avatarPreview').innerHTML=`<img src="${URL.createObjectURL(f)}">`}};
@@ -563,5 +591,5 @@ function bind(){
   $('#eventFilter').onchange=renderBoards;
   $('#importInput').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{await importStateToSupabase(loadImportedState(JSON.parse(r.result)))}catch(err){alert('فشل استيراد البيانات إلى Supabase: '+err.message)}};r.readAsText(f)};
 }
-async function boot(){bind();await initDb();if(dbOnline&&getSession()&&currentUser())$('#loginOverlay').classList.add('hidden');else{clearSession();$('#loginOverlay').classList.remove('hidden')}render()}
+async function boot(){bind();await initDb();const session=getSession();const valid=!!(dbOnline&&session?.sessionId&&currentUser()&&await dbValidateSession(session.sessionId));if(valid)$('#loginOverlay').classList.add('hidden');else{clearSession();$('#loginOverlay').classList.remove('hidden')}render()}
 boot();

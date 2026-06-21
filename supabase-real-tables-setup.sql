@@ -171,6 +171,11 @@ begin
 end;
 $$;
 
+create or replace function public.studio_validate_session(p_session_id text)
+returns boolean language sql security definer set search_path=public stable as $$
+  select exists(select 1 from public.studio_sessions s where s.session_id=p_session_id and s.ended_at is null and s.expires_at>now());
+$$;
+
 create or replace function public.studio_admin_save_task(p_session_id text,p_task jsonb)
 returns void language plpgsql security definer set search_path=public as $$
 begin
@@ -225,12 +230,14 @@ end;
 $$;
 
 revoke all on function public.studio_session_user(text,boolean) from public;
+revoke all on function public.studio_validate_session(text) from public;
 revoke all on function public.studio_admin_save_task(text,jsonb) from public;
 revoke all on function public.studio_admin_delete_task(text,text) from public;
 revoke all on function public.studio_save_activity_log(text,jsonb) from public;
 revoke all on function public.studio_get_activity_logs(text,integer) from public;
 revoke all on function public.studio_logout(text,text) from public;
 grant execute on function public.studio_admin_save_task(text,jsonb) to anon;
+grant execute on function public.studio_validate_session(text) to anon;
 grant execute on function public.studio_admin_delete_task(text,text) to anon;
 grant execute on function public.studio_save_activity_log(text,jsonb) to anon;
 grant execute on function public.studio_get_activity_logs(text,integer) to anon;

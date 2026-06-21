@@ -102,29 +102,39 @@
     </section>
   </main>
 
-  <dialog id="taskDialog">
+  <dialog id="taskDialog" class="task-experience-dialog">
     <form method="dialog" id="taskForm">
-      <h2 id="taskDialogTitle">Task Card</h2>
-      <div id="taskPermissionNote" class="permission-note hidden">وضع العرض فقط — تعديل التاسك متاح للـAdmin فقط</div>
       <input type="hidden" id="taskId" />
-      <div class="two-col">
-        <label>Board<select id="taskBoardType"><option value="event">Event Board</option><option value="social">Social Board</option></select></label>
-        <label>الفعالية<select id="taskEvent" required></select></label>
-        <label>Column<select id="taskColumn"></select></label>
-      </div>
-      <label>Task Title<input id="taskTitle" required placeholder="مثال: تصميم بوابة الدخول" /></label>
-      <div class="two-col">
-        <label>Assigned To<select id="taskOwner" required></select></label>
-        <label>Priority<select id="taskPriority"><option>Normal</option><option>High</option><option>Urgent</option></select></label>
-      </div>
-      <div class="two-col">
-        <label>Due Date<input id="taskDue" type="date" /></label>
-        <label>Tags<input id="taskTags" placeholder="Design, 3D, Client" /></label>
-      </div>
-      <label>Details<textarea id="taskNotes" rows="4"></textarea></label>
-      <div class="elements-panel" id="taskElementsPanel"><h3>العناصر المطلوبة</h3><div id="taskElementsView" class="elements-box empty">لم يتم استخراج عناصر بعد</div></div>
-      <label id="delayReasonWrap" class="hidden">سبب التأخير<textarea id="taskDelayReason" rows="3" placeholder="سبب التأخير أصبح من My Tasks فقط"></textarea></label>
-      <label>Attach Images / PDF<input id="taskFiles" type="file" multiple accept="image/*,.pdf" /></label>
+      <div id="taskDetailHero" class="task-detail-hero"></div>
+      <div id="taskPermissionNote" class="permission-note hidden">وضع العرض فقط — تعديل التاسك متاح للـAdmin فقط</div>
+      <div id="taskDetailOverview" class="task-detail-overview"></div>
+
+      <section id="taskEditorFields" class="task-editor-fields">
+        <div class="task-section-heading"><span>✦</span><div><small>Admin workspace</small><h2 id="taskDialogTitle">تحرير التاسك</h2></div></div>
+        <div class="two-col">
+          <label>Board<select id="taskBoardType"><option value="event">Event Board</option><option value="social">Social Board</option></select></label>
+          <label>الفعالية<select id="taskEvent" required></select></label>
+          <label>Column<select id="taskColumn"></select></label>
+        </div>
+        <label>Task Title<input id="taskTitle" required placeholder="مثال: تصميم بوابة الدخول" /></label>
+        <div class="two-col">
+          <label>Assigned To<select id="taskOwner" required></select></label>
+          <label>Priority<select id="taskPriority"><option>Normal</option><option>High</option><option>Urgent</option></select></label>
+        </div>
+        <div class="two-col">
+          <label>Due Date<input id="taskDue" type="date" /></label>
+          <label>Tags<input id="taskTags" placeholder="Design, 3D, Client" /></label>
+        </div>
+        <label class="drive-delivery-field"><span>Drive Link للتسليم</span><input id="taskDriveLink" type="url" placeholder="https://drive.google.com/..." /><small>عند إضافة الرابط سيظهر زر التسليم مباشرة في أعلى الكارت.</small></label>
+        <label>Details<textarea id="taskNotes" rows="4"></textarea></label>
+        <label id="delayReasonWrap" class="hidden">سبب التأخير<textarea id="taskDelayReason" rows="3"></textarea></label>
+      </section>
+
+      <section class="task-elements-section" id="taskElementsPanel">
+        <div class="task-section-heading"><span>▦</span><div><small>Production scope</small><h2>جدول العناصر المطلوبة</h2></div></div>
+        <div id="taskElementsView" class="elements-table-wrap empty">لم يتم استخراج عناصر بعد</div>
+      </section>
+      <label class="task-upload-field">Attach Images / PDF<input id="taskFiles" type="file" multiple accept="image/*,.pdf" /></label>
       <div id="taskAttachmentsPreview" class="attachments-grid"></div>
       <div class="dialog-actions">
         <button type="button" id="deleteTaskBtn" class="danger admin-only">حذف</button><span></span>
