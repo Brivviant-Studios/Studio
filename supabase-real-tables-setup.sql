@@ -45,6 +45,9 @@ create table if not exists studio_event_tasks (
   ai_brief_pdf_name text,
   ai_brief_analyzed_at timestamptz,
   drive_link text,
+  staff_status text not null default 'pending' check (staff_status in ('pending','working','blocked','submitted')),
+  submitted_at timestamptz,
+  submitted_by text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -156,6 +159,15 @@ alter table studio_event_tasks add column if not exists ai_brief_pdf_name text;
 alter table studio_event_tasks add column if not exists ai_brief_pdf_path text;
 alter table studio_event_tasks add column if not exists ai_brief_pdf_url text;
 alter table studio_event_tasks add column if not exists ai_brief_analyzed_at timestamptz;
+alter table studio_event_tasks add column if not exists staff_status text not null default 'pending';
+alter table studio_event_tasks add column if not exists submitted_at timestamptz;
+alter table studio_event_tasks add column if not exists submitted_by text;
+
+do $$ begin
+  if not exists(select 1 from pg_constraint where conname='studio_event_tasks_staff_status_check') then
+    alter table public.studio_event_tasks add constraint studio_event_tasks_staff_status_check check (staff_status in ('pending','working','blocked','submitted'));
+  end if;
+end $$;
 
 -- Session-backed authorization. Task writes are only exposed through admin RPCs.
 create or replace function public.studio_session_user(p_session_id text,p_admin_only boolean default false)
@@ -181,11 +193,29 @@ returns void language plpgsql security definer set search_path=public as $$
 begin
   perform public.studio_session_user(p_session_id,true);
   insert into public.studio_event_tasks
-    (id,board_type,event_id,title,column_id,owner,owner_name,priority,due,tags,notes,delay_reason,attachments,ai_brief_analysis,design_elements,ai_brief_pdf_name,ai_brief_pdf_path,ai_brief_pdf_url,ai_brief_analyzed_at,drive_link,updated_at)
+    (id,board_type,event_id,title,column_id,owner,owner_name,priority,due,tags,notes,delay_reason,attachments,ai_brief_analysis,design_elements,ai_brief_pdf_name,ai_brief_pdf_path,ai_brief_pdf_url,ai_brief_analyzed_at,drive_link,staff_status,submitted_at,submitted_by,updated_at)
   values
-    (p_task->>'id',coalesce(p_task->>'board_type','event'),nullif(p_task->>'event_id',''),coalesce(p_task->>'title',''),coalesce(p_task->>'column_id','todo'),p_task->>'owner',p_task->>'owner_name',p_task->>'priority',nullif(p_task->>'due','')::date,p_task->>'tags',p_task->>'notes',p_task->>'delay_reason',coalesce(p_task->'attachments','[]'::jsonb),p_task->'ai_brief_analysis',coalesce(p_task->'design_elements','[]'::jsonb),p_task->>'ai_brief_pdf_name',p_task->>'ai_brief_pdf_path',p_task->>'ai_brief_pdf_url',nullif(p_task->>'ai_brief_analyzed_at','')::timestamptz,p_task->>'drive_link',now())
+    (p_task->>'id',coalesce(p_task->>'board_type','event'),nullif(p_task->>'event_id',''),coalesce(p_task->>'title',''),coalesce(p_task->>'column_id','todo'),p_task->>'owner',p_task->>'owner_name',p_task->>'priority',nullif(p_task->>'due','')::date,p_task->>'tags',p_task->>'notes',p_task->>'delay_reason',coalesce(p_task->'attachments','[]'::jsonb),p_task->'ai_brief_analysis',coalesce(p_task->'design_elements','[]'::jsonb),p_task->>'ai_brief_pdf_name',p_task->>'ai_brief_pdf_path',p_task->>'ai_brief_pdf_url',nullif(p_task->>'ai_brief_analyzed_at','')::timestamptz,p_task->>'drive_link',coalesce(p_task->>'staff_status','pending'),nullif(p_task->>'submitted_at','')::timestamptz,p_task->>'submitted_by',now())
   on conflict (id) do update set
-    board_type=excluded.board_type,event_id=excluded.event_id,title=excluded.title,column_id=excluded.column_id,owner=excluded.owner,owner_name=excluded.owner_name,priority=excluded.priority,due=excluded.due,tags=excluded.tags,notes=excluded.notes,delay_reason=excluded.delay_reason,attachments=excluded.attachments,ai_brief_analysis=excluded.ai_brief_analysis,design_elements=excluded.design_elements,ai_brief_pdf_name=excluded.ai_brief_pdf_name,ai_brief_pdf_path=excluded.ai_brief_pdf_path,ai_brief_pdf_url=excluded.ai_brief_pdf_url,ai_brief_analyzed_at=excluded.ai_brief_analyzed_at,drive_link=excluded.drive_link,updated_at=now();
+    board_type=excluded.board_type,event_id=excluded.event_id,title=excluded.title,column_id=excluded.column_id,owner=excluded.owner,owner_name=excluded.owner_name,priority=excluded.priority,due=excluded.due,tags=excluded.tags,notes=excluded.notes,delay_reason=excluded.delay_reason,attachments=excluded.attachments,ai_brief_analysis=excluded.ai_brief_analysis,design_elements=excluded.design_elements,ai_brief_pdf_name=excluded.ai_brief_pdf_name,ai_brief_pdf_path=excluded.ai_brief_pdf_path,ai_brief_pdf_url=excluded.ai_brief_pdf_url,ai_brief_analyzed_at=excluded.ai_brief_analyzed_at,drive_link=excluded.drive_link,staff_status=excluded.staff_status,submitted_at=excluded.submitted_at,submitted_by=excluded.submitted_by,updated_at=now();
+end;
+$$;
+
+create or replace function public.studio_update_task_progress(p_session_id text,p_task_id text,p_status text,p_drive_link text,p_completed_indexes jsonb default '[]'::jsonb)
+returns void language plpgsql security definer set search_path=public as $$
+declare v_user public.studio_users%rowtype;v_task public.studio_event_tasks%rowtype;v_elements jsonb;
+begin
+  select u.* into v_user from public.studio_users u where u.id=public.studio_session_user(p_session_id,false);
+  select * into v_task from public.studio_event_tasks where id=p_task_id;
+  if v_task.id is null then raise exception 'Task not found' using errcode='P0002'; end if;
+  if v_user.role<>'admin' and not (coalesce(v_task.owner,'')=v_user.id or lower(coalesce(v_task.owner,'')) in (lower(coalesce(v_user.username,'')),lower(coalesce(v_user.name,'')),lower(coalesce(v_user.nickname,'')),lower(coalesce(v_user.email,'')))) then raise exception 'Only the assigned user can update task progress' using errcode='42501'; end if;
+  if p_status not in ('pending','working','blocked','submitted') then raise exception 'Invalid task status' using errcode='22023'; end if;
+  if p_status='submitted' and nullif(trim(coalesce(p_drive_link,'')),'') is null then raise exception 'Drive link is required for submission' using errcode='22023'; end if;
+  select coalesce(jsonb_agg(case when jsonb_typeof(e.value)='object' then jsonb_set(e.value,'{completed}',to_jsonb(exists(select 1 from jsonb_array_elements_text(coalesce(p_completed_indexes,'[]'::jsonb)) x where x.value::int=e.ordinality-1)),true) else jsonb_build_object('name',trim(both '"' from e.value::text),'completed',exists(select 1 from jsonb_array_elements_text(coalesce(p_completed_indexes,'[]'::jsonb)) x where x.value::int=e.ordinality-1)) end order by e.ordinality),'[]'::jsonb) into v_elements
+  from jsonb_array_elements(coalesce(v_task.design_elements,'[]'::jsonb)) with ordinality e(value,ordinality);
+  update public.studio_event_tasks set staff_status=p_status,drive_link=nullif(trim(coalesce(p_drive_link,'')),''),design_elements=v_elements,submitted_at=case when p_status='submitted' then now() else null end,submitted_by=case when p_status='submitted' then v_user.id else null end,updated_at=now() where id=p_task_id;
+  insert into public.studio_activity_logs(id,action,details,target,actor,username,role,created_at)
+  values(gen_random_uuid()::text,'Task Progress Update','Status: '||p_status||' | Completed elements: '||jsonb_array_length(coalesce(p_completed_indexes,'[]'::jsonb)),v_task.title,v_user.name,v_user.username,v_user.role,now());
 end;
 $$;
 
@@ -233,12 +263,14 @@ revoke all on function public.studio_session_user(text,boolean) from public;
 revoke all on function public.studio_validate_session(text) from public;
 revoke all on function public.studio_admin_save_task(text,jsonb) from public;
 revoke all on function public.studio_admin_delete_task(text,text) from public;
+revoke all on function public.studio_update_task_progress(text,text,text,text,jsonb) from public;
 revoke all on function public.studio_save_activity_log(text,jsonb) from public;
 revoke all on function public.studio_get_activity_logs(text,integer) from public;
 revoke all on function public.studio_logout(text,text) from public;
 grant execute on function public.studio_admin_save_task(text,jsonb) to anon;
 grant execute on function public.studio_validate_session(text) to anon;
 grant execute on function public.studio_admin_delete_task(text,text) to anon;
+grant execute on function public.studio_update_task_progress(text,text,text,text,jsonb) to anon;
 grant execute on function public.studio_save_activity_log(text,jsonb) to anon;
 grant execute on function public.studio_get_activity_logs(text,integer) to anon;
 grant execute on function public.studio_logout(text,text) to anon;

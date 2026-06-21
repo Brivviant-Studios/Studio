@@ -12,6 +12,12 @@ const BOARD_TYPES={
   event:{id:'event',tab:'board',label:'Event Board'},
   social:{id:'social',tab:'social',label:'Social Board'}
 };
+const STAFF_STATUSES=[
+  {id:'pending',label:'لم يبدأ',hint:'في انتظار البدء'},
+  {id:'working',label:'شغال',hint:'جاري التنفيذ'},
+  {id:'blocked',label:'معطل',hint:'يوجد عائق'},
+  {id:'submitted',label:'تم التسليم',hint:'تم رفع رابط التسليم'}
+];
 const DEFAULT_ADMIN={id:'admin-brivviant',name:'Brivviant',nickname:'Main Admin',username:'Brivviant',password:'Brivviant@123456',email:'',role:'admin',avatar:''};
 let state=loadState();
 let activeBoardType='event';
@@ -30,8 +36,8 @@ function userFromDb(r){const u={id:r.id,name:r.name||'',nickname:r.nickname||'',
 function userToDb(u){const row={id:u.id,name:u.name||'',nickname:u.nickname||'',username:u.username||'',email:u.email||'',role:normalizeRole(u.role),avatar:u.avatar||''};if(u.password)row.password=u.password;return row}
 function eventFromDb(r){return {id:r.id,name:r.name||'',client:r.client||'',date:r.event_date||'',notes:r.notes||''}}
 function eventToDb(e){return {id:e.id,name:e.name||'',client:e.client||'',event_date:e.date||null,notes:e.notes||''}}
-function taskFromDb(r){return normalizeTask({id:r.id,boardType:r.board_type,eventId:r.event_id,title:r.title||'',column:r.column_id||'todo',owner:r.owner||'',ownerName:r.owner_name||'',priority:r.priority||'Normal',due:r.due||'',tags:r.tags||'',notes:r.notes||'',delayReason:r.delay_reason||'',attachments:Array.isArray(r.attachments)?r.attachments:[],aiBriefAnalysis:r.ai_brief_analysis||null,designElements:Array.isArray(r.design_elements)?r.design_elements:[],aiBriefPdfName:r.ai_brief_pdf_name||'',aiBriefPdfPath:r.ai_brief_pdf_path||'',aiBriefPdfUrl:r.ai_brief_pdf_url||'',aiBriefAnalyzedAt:r.ai_brief_analyzed_at||'',driveLink:r.drive_link||'',updatedAt:r.updated_at||''})}
-function taskToDb(t){return {id:t.id,board_type:normalizeBoardType(t.boardType),event_id:normalizeBoardType(t.boardType)==='event'?(t.eventId||null):null,title:t.title||'',column_id:t.column||'todo',owner:t.owner||'',owner_name:t.ownerName||'',priority:t.priority||'Normal',due:t.due||null,tags:t.tags||'',notes:t.notes||'',delay_reason:t.delayReason||'',attachments:t.attachments||[],ai_brief_analysis:t.aiBriefAnalysis||null,design_elements:t.designElements||[],ai_brief_pdf_name:t.aiBriefPdfName||null,ai_brief_pdf_path:t.aiBriefPdfPath||null,ai_brief_pdf_url:t.aiBriefPdfUrl||null,ai_brief_analyzed_at:t.aiBriefAnalyzedAt||null,drive_link:t.driveLink||'',updated_at:t.updatedAt||new Date().toISOString()}}
+function taskFromDb(r){return normalizeTask({id:r.id,boardType:r.board_type,eventId:r.event_id,title:r.title||'',column:r.column_id||'todo',owner:r.owner||'',ownerName:r.owner_name||'',priority:r.priority||'Normal',due:r.due||'',tags:r.tags||'',notes:r.notes||'',delayReason:r.delay_reason||'',attachments:Array.isArray(r.attachments)?r.attachments:[],aiBriefAnalysis:r.ai_brief_analysis||null,designElements:Array.isArray(r.design_elements)?r.design_elements:[],aiBriefPdfName:r.ai_brief_pdf_name||'',aiBriefPdfPath:r.ai_brief_pdf_path||'',aiBriefPdfUrl:r.ai_brief_pdf_url||'',aiBriefAnalyzedAt:r.ai_brief_analyzed_at||'',driveLink:r.drive_link||'',staffStatus:r.staff_status||'pending',submittedAt:r.submitted_at||'',submittedBy:r.submitted_by||'',updatedAt:r.updated_at||''})}
+function taskToDb(t){return {id:t.id,board_type:normalizeBoardType(t.boardType),event_id:normalizeBoardType(t.boardType)==='event'?(t.eventId||null):null,title:t.title||'',column_id:t.column||'todo',owner:t.owner||'',owner_name:t.ownerName||'',priority:t.priority||'Normal',due:t.due||null,tags:t.tags||'',notes:t.notes||'',delay_reason:t.delayReason||'',attachments:t.attachments||[],ai_brief_analysis:t.aiBriefAnalysis||null,design_elements:t.designElements||[],ai_brief_pdf_name:t.aiBriefPdfName||null,ai_brief_pdf_path:t.aiBriefPdfPath||null,ai_brief_pdf_url:t.aiBriefPdfUrl||null,ai_brief_analyzed_at:t.aiBriefAnalyzedAt||null,drive_link:t.driveLink||'',staff_status:t.staffStatus||'pending',submitted_at:t.submittedAt||null,submitted_by:t.submittedBy||null,updated_at:t.updatedAt||new Date().toISOString()}}
 function logFromDb(r){return {id:r.id,action:r.action||'',details:r.details||'',target:r.target||'',actor:r.actor||'',username:r.username||'',role:r.role||'',createdAt:r.created_at||'',createdAtText:r.created_at?new Date(r.created_at).toLocaleString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}):''}}
 function logToDb(l){return {id:l.id,action:l.action,details:l.details,target:l.target,actor:l.actor,username:l.username,role:l.role,created_at:l.createdAt||new Date().toISOString()}}
 async function initDb(){
@@ -71,6 +77,7 @@ function requireDb(){if(!dbClient)throw new Error('Supabase is not connected. Ch
 async function dbUpsertUser(u){requireDb();const existing=state.users.some(x=>x.id===u.id);const payload=userToDb(u);const {error}=existing?await dbClient.from('studio_users').update(payload).eq('id',u.id):await dbClient.from('studio_users').insert(payload);if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(500);}
 async function dbUpsertEvent(e){requireDb(); const {error}=await dbClient.from('studio_events').upsert(eventToDb(e)); if(error){dbOnline=false;throw error;} scheduleRealtimeRefresh(500);}
 async function dbUpsertTask(t){requireDb();const sessionId=getSession()?.sessionId;if(!sessionId)throw new Error('جلسة الدخول غير صالحة. سجل الدخول مرة أخرى.');const {error}=await dbClient.rpc('studio_admin_save_task',{p_session_id:sessionId,p_task:taskToDb(t)});if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(500);}
+async function dbUpdateTaskProgress(taskId,status,driveLink,completedIndexes){requireDb();const sessionId=getSession()?.sessionId;if(!sessionId)throw new Error('جلسة الدخول غير صالحة. سجل الدخول مرة أخرى.');const {data,error}=await dbClient.rpc('studio_update_task_progress',{p_session_id:sessionId,p_task_id:taskId,p_status:status,p_drive_link:driveLink||'',p_completed_indexes:completedIndexes});if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(300);return Array.isArray(data)?data[0]:data}
 async function dbInsertLog(l){requireDb();const sessionId=getSession()?.sessionId;if(!sessionId)return;let {error}=await dbClient.rpc('studio_save_activity_log',{p_session_id:sessionId,p_log:logToDb(l)});if(error?.code==='PGRST202')({error}=await dbClient.from('studio_activity_logs').insert(logToDb(l)));if(error){dbOnline=false;throw error;}scheduleRealtimeRefresh(700);}
 async function dbInsertLoginEvent(event){
   requireDb();
@@ -163,7 +170,10 @@ function normalizeTask(t={}){
     eventId:t.eventId||t.event_id||'',
     column:t.column||t.column_id||'todo',
     attachments:Array.isArray(t.attachments)?t.attachments:[],
-    designElements:Array.isArray(t.designElements)?t.designElements:[],
+    designElements:Array.isArray(t.designElements)?t.designElements.map(x=>typeof x==='string'?{name:x,completed:false}:{...x,completed:x?.completed===true}):[],
+    staffStatus:t.staffStatus||t.staff_status||'pending',
+    submittedAt:t.submittedAt||t.submitted_at||'',
+    submittedBy:t.submittedBy||t.submitted_by||'',
     updatedAt:t.updatedAt||t.updated_at||''
   };
 }
@@ -306,25 +316,43 @@ function renderDesignElements(elements,compact=false){
     const name=typeof el==='string'?el:(el.name||el.title||'عنصر');
     const desc=typeof el==='string'?'':(el.description||el.notes||'');
     const extra=typeof el==='string'?'':[el.quantity,el.dimensions].filter(Boolean).join(' • ');
-    return `<div class="element-row"><b>${safe(name)}</b>${extra?`<small>${safe(extra)}</small>`:''}${(!compact&&desc)?`<p>${safe(desc)}</p>`:''}</div>`;
+    return `<div class="element-row ${el?.completed?'completed':''}"><b>${el?.completed?'<span class="mini-done">✓</span> ':''}${safe(name)}</b>${extra?`<small>${safe(extra)}</small>`:''}${(!compact&&desc)?`<p>${safe(desc)}</p>`:''}</div>`;
   }).join('')}${compact&&list.length>3?`<small class="more-elements">+ ${list.length-3} عناصر أخرى</small>`:''}</div>`;
 }
-function renderDesignElementsTable(elements){
+function renderDesignElementsTable(elements,interactive=false){
   const list=Array.isArray(elements)?elements.filter(Boolean):[];
   if(!list.length)return '';
-  return `<table class="elements-table"><thead><tr><th>#</th><th>العنصر</th><th>الوصف</th><th>الكمية</th><th>المقاسات</th><th>ملاحظات</th></tr></thead><tbody>${list.map((item,index)=>{
+  return `<table class="elements-table ${interactive?'interactive':''}"><thead><tr><th>تم</th><th>#</th><th>العنصر</th><th>الوصف</th><th>الكمية</th><th>المقاسات</th><th>ملاحظات</th></tr></thead><tbody>${list.map((item,index)=>{
     const el=typeof item==='string'?{name:item}:item||{};
-    return `<tr><td><span class="element-index">${String(index+1).padStart(2,'0')}</span></td><td><b>${safe(el.name||el.title||'عنصر')}</b></td><td>${safe(el.description||'—')}</td><td>${safe(el.quantity||'—')}</td><td>${safe(el.dimensions||el.size||'—')}</td><td>${safe(el.notes||'—')}</td></tr>`;
+    return `<tr class="${el.completed?'completed':''}"><td>${interactive?`<label class="element-check"><input type="checkbox" data-element-check="${index}" ${el.completed?'checked':''}><span>✓</span></label>`:`<span class="element-read-check ${el.completed?'done':''}">${el.completed?'✓':'○'}</span>`}</td><td><span class="element-index">${String(index+1).padStart(2,'0')}</span></td><td><b>${safe(el.name||el.title||'عنصر')}</b></td><td>${safe(el.description||'—')}</td><td>${safe(el.quantity||'—')}</td><td>${safe(el.dimensions||el.size||'—')}</td><td>${safe(el.notes||'—')}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
 function taskContextName(t){return normalizeBoardType(t.boardType)==='social'?'Social Board':getEventName(t.eventId)}
 function renderTaskExperience(t){
   const task=t||{title:'تاسك جديد',boardType:currentBoardType(),column:'todo',priority:'Normal',attachments:[],designElements:[]};
   const type=normalizeBoardType(task.boardType),event=state.events.find(x=>x.id===task.eventId),project=type==='social'?'Social Content':(event?.name||'مشروع جديد');
-  const status=COLUMNS.find(c=>c.id===task.column)?.title||'To Do',owner=task.ownerName||getUserName(task.owner)||'غير محدد',tags=String(task.tags||'').split(/[,،]/).map(x=>x.trim()).filter(Boolean);
+  const status=COLUMNS.find(c=>c.id===task.column)?.title||'To Do',staffStatus=STAFF_STATUSES.find(s=>s.id===(task.staffStatus||'pending'))||STAFF_STATUSES[0],owner=task.ownerName||getUserName(task.owner)||'غير محدد',tags=String(task.tags||'').split(/[,،]/).map(x=>x.trim()).filter(Boolean);
   const flow=COLUMNS,activeIndex=Math.max(0,flow.findIndex(c=>c.id===task.column));
   $('#taskDetailHero').innerHTML=`<div class="task-hero-glow"></div><div class="task-hero-copy"><div class="task-hero-kicker"><span>${safe(type==='social'?'SOCIAL BOARD':'EVENT PROJECT')}</span><span class="task-status-dot">${safe(status)}</span></div><small>المشروع</small><h3>${safe(project)}</h3><h1>${safe(task.title||'بدون عنوان')}</h1><div class="task-hero-sub"><span>${safe(event?.client||'Brivviant Studio')}</span><span>•</span><span>${safe(task.due||'بدون موعد')}</span></div></div><div class="task-progress">${flow.map((c,i)=>`<div class="task-progress-step ${i<=activeIndex?'active':''} ${c.id===task.column?'current':''}"><i></i><span>${safe(c.title)}</span></div>`).join('')}</div>`;
-  $('#taskDetailOverview').innerHTML=`<div class="task-facts"><article><small>المسؤول</small><b>${safe(owner)}</b><span>Assigned owner</span></article><article><small>موعد التسليم</small><b>${safe(task.due||'غير محدد')}</b><span>Due date</span></article><article><small>الأولوية</small><b class="priority-text ${priorityClass(task.priority)}">${safe(task.priority||'Normal')}</b><span>Priority level</span></article><article><small>المرفقات</small><b>${(task.attachments||[]).length}</b><span>Files & references</span></article></div><div class="task-story-grid"><article class="task-brief-card"><small>PROJECT BRIEF</small><h3>تفاصيل التاسك</h3><p>${safe(task.notes||'لا توجد تفاصيل إضافية لهذا التاسك حتى الآن.')}</p>${tags.length?`<div class="task-tags">${tags.map(tag=>`<span>#${safe(tag)}</span>`).join('')}</div>`:''}</article><aside class="task-delivery-card"><small>DELIVERY</small><h3>${task.driveLink?'جاهز للتسليم':'قيد التنفيذ'}</h3>${task.driveLink?`<a href="${safe(task.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم ↗</a>`:'<p>سيظهر رابط التسليم هنا عند إضافته.</p>'}${task.delayReason?`<div class="delay-insight"><b>سبب التأخير</b><span>${safe(task.delayReason)}</span></div>`:''}</aside></div>`;
+  $('#taskDetailOverview').innerHTML=`<div class="task-facts"><article><small>المسؤول</small><b>${safe(owner)}</b><span>Assigned owner</span></article><article><small>حالة التنفيذ</small><b class="staff-status-text status-${staffStatus.id}">${safe(staffStatus.label)}</b><span>${safe(staffStatus.hint)}</span></article><article><small>موعد التسليم</small><b>${safe(task.due||'غير محدد')}</b><span>Due date</span></article><article><small>الأولوية</small><b class="priority-text ${priorityClass(task.priority)}">${safe(task.priority||'Normal')}</b><span>Priority level</span></article><article><small>المرفقات</small><b>${(task.attachments||[]).length}</b><span>Files & references</span></article></div><div class="task-story-grid"><article class="task-brief-card"><small>PROJECT BRIEF</small><h3>تفاصيل التاسك</h3><p>${safe(task.notes||'لا توجد تفاصيل إضافية لهذا التاسك حتى الآن.')}</p>${tags.length?`<div class="task-tags">${tags.map(tag=>`<span>#${safe(tag)}</span>`).join('')}</div>`:''}</article><aside class="task-delivery-card"><small>DELIVERY</small><h3>${task.staffStatus==='submitted'?'تم التسليم':task.driveLink?'رابط مضاف':'قيد التنفيذ'}</h3>${task.driveLink?`<a href="${safe(task.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم ↗</a>`:'<p>سيظهر رابط التسليم هنا عند إضافته.</p>'}${task.submittedAt?`<span class="submitted-time">${safe(new Date(task.submittedAt).toLocaleString('ar-EG'))}</span>`:''}${task.delayReason?`<div class="delay-insight"><b>سبب التأخير</b><span>${safe(task.delayReason)}</span></div>`:''}</aside></div>`;
+}
+function canUpdateTaskProgress(t){return !!(t&&!isAdmin()&&isTaskOwner(t))}
+function updateTaskProgressCounter(){const boxes=$$('#taskElementsView [data-element-check]'),done=boxes.filter(x=>x.checked).length,total=boxes.length;const count=$('#taskProgressCount');if(count)count.textContent=`${done} / ${total}`;const bar=$('#taskProgressBar');if(bar)bar.style.width=total?`${Math.round(done/total*100)}%`:'0%'}
+function renderTaskProgressPanel(t){
+  const panel=$('#taskProgressPanel');if(!panel)return;
+  if(!t){panel.classList.add('hidden');panel.innerHTML='';return}
+  const editable=canUpdateTaskProgress(t),status=t.staffStatus||'pending',elements=t.designElements||[],done=elements.filter(x=>x?.completed).length;
+  panel.classList.remove('hidden');
+  panel.innerHTML=`<div class="task-section-heading"><span>✓</span><div><small>EXECUTION UPDATE</small><h2>${editable?'حدّث تنفيذك':'متابعة تنفيذ صاحب التاسك'}</h2></div><div class="progress-number" id="taskProgressCount">${done} / ${elements.length}</div></div><div class="completion-track"><i id="taskProgressBar" style="width:${elements.length?Math.round(done/elements.length*100):0}%"></i></div><div class="staff-status-options">${STAFF_STATUSES.map(s=>`<label class="staff-status-option status-${s.id} ${status===s.id?'selected':''}"><input type="radio" name="taskStaffStatus" value="${s.id}" ${status===s.id?'checked':''} ${editable?'':'disabled'}><span><b>${safe(s.label)}</b><small>${safe(s.hint)}</small></span></label>`).join('')}</div><label class="staff-delivery-field">رابط Drive للتسليم<input id="staffTaskDriveLink" type="url" placeholder="https://drive.google.com/..." value="${safe(t.driveLink||'')}" ${editable?'':'disabled'}><small>اختيار “تم التسليم” يتطلب رابط Drive صالح.</small></label><div id="taskProgressMessage" class="task-progress-message"></div>${editable?'<button type="button" id="saveTaskProgressBtn" class="save-progress-btn">حفظ حالة التنفيذ والتسليم</button>':''}`;
+  if(editable){$$('[name="taskStaffStatus"]').forEach(input=>input.onchange=()=>{$$('.staff-status-option').forEach(x=>x.classList.toggle('selected',x.querySelector('input')?.checked))});$('#saveTaskProgressBtn').onclick=saveTaskProgress}
+}
+async function saveTaskProgress(){
+  const t=state.tasks.find(x=>x.id===$('#taskId').value),message=$('#taskProgressMessage');if(!canUpdateTaskProgress(t)){if(message)message.textContent='غير مسموح بتحديث هذا التاسك.';return}
+  const status=$('[name="taskStaffStatus"]:checked')?.value||'pending',driveLink=$('#staffTaskDriveLink').value.trim(),completedIndexes=$$('#taskElementsView [data-element-check]').filter(x=>x.checked).map(x=>Number(x.dataset.elementCheck));
+  if(driveLink&&!/^https?:\/\//i.test(driveLink)){message.textContent='رابط Drive لازم يبدأ بـ http أو https.';return}
+  if(status==='submitted'&&!driveLink){message.textContent='أضف رابط Drive قبل اختيار “تم التسليم”.';return}
+  const btn=$('#saveTaskProgressBtn');btn.disabled=true;message.textContent='جاري الحفظ في Supabase...';
+  try{await dbUpdateTaskProgress(t.id,status,driveLink,completedIndexes);t.staffStatus=status;t.driveLink=driveLink;t.designElements=(t.designElements||[]).map((el,index)=>({...el,completed:completedIndexes.includes(index)}));t.submittedAt=status==='submitted'?new Date().toISOString():'';t.submittedBy=currentUser()?.id||'';t.updatedAt=new Date().toISOString();saveState();renderTaskExperience(t);renderTaskProgressPanel(t);const view=$('#taskElementsView');view.innerHTML=renderDesignElementsTable(t.designElements,true)||'لم يتم استخراج عناصر بعد';view.querySelectorAll('[data-element-check]').forEach(x=>x.onchange=updateTaskProgressCounter);updateTaskProgressCounter();$('#taskProgressMessage').textContent='تم حفظ التحديث والتسليم في Supabase.';renderMyTasks()}catch(err){message.textContent='فشل الحفظ: '+err.message}finally{const activeBtn=$('#saveTaskProgressBtn');if(activeBtn)activeBtn.disabled=false}
 }
 function previewTaskExperience(){
   if(!isAdmin()||!$('#taskDialog')?.open)return;
@@ -332,14 +360,14 @@ function previewTaskExperience(){
   renderTaskExperience({...current,title:$('#taskTitle').value,boardType:$('#taskBoardType').value,eventId:$('#taskEvent').value,column:$('#taskColumn').value,owner:owner?.id||'',ownerName:owner?(owner.nickname||owner.name):'',priority:$('#taskPriority').value,due:$('#taskDue').value,tags:$('#taskTags').value,notes:$('#taskNotes').value,driveLink:$('#taskDriveLink').value});
 }
 function attachmentUrl(a){return a?.url||a?.data||''}
-function taskCard(t){const atts=t.attachments||[];const contextLabel=normalizeBoardType(t.boardType)==='social'?'Board':'Event';return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="meta-grid"><div class="meta"><small>${contextLabel}</small><b>${safe(taskContextName(t))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${renderDesignElements(t.designElements,true)}${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${safe(attachmentUrl(a))}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div>${t.driveLink?`<div class="task-drive"><small>Drive</small><a href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a></div>`:''}<div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
+function taskCard(t){const atts=t.attachments||[],elements=t.designElements||[],done=elements.filter(x=>x?.completed).length,status=STAFF_STATUSES.find(s=>s.id===(t.staffStatus||'pending'))||STAFF_STATUSES[0],contextLabel=normalizeBoardType(t.boardType)==='social'?'Board':'Event';return `<article class="task-card" data-id="${t.id}"><div class="task-top"><div class="task-title">${safe(t.title)}</div><span class="pill ${priorityClass(t.priority)}">${safe(t.priority||'Normal')}</span></div><div class="card-execution-row"><span class="staff-mini-status status-${status.id}">${safe(status.label)}</span><span>${done}/${elements.length} عناصر</span></div><div class="meta-grid"><div class="meta"><small>${contextLabel}</small><b>${safe(taskContextName(t))}</b></div><div class="meta"><small>Owner</small><b>${safe(t.ownerName||getUserName(t.owner))}</b></div><div class="meta"><small>Due</small><b>${safe(t.due||'-')}</b></div><div class="meta"><small>Files</small><b>${atts.length}</b></div></div>${renderDesignElements(t.designElements,true)}${t.notes?`<div class="task-notes">${safe(t.notes).slice(0,130)}</div>`:''}<div class="thumbs">${atts.slice(0,4).map(a=>a.type?.startsWith('image/')?`<img src="${safe(attachmentUrl(a))}" alt="">`:`<span class="pdf-chip">PDF</span>`).join('')}</div>${t.driveLink?`<div class="task-drive"><small>Drive</small><a href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a></div>`:''}<div class="task-actions"><button type="button" class="ai-brief-btn" data-ai-brief="${t.id}">شرح العناصر</button></div></article>`}
 function renderMyTasks(){
   const u=currentUser();
   const list=$('#myTasksList');
   if(!u){list.innerHTML='';return}
   const tasks=state.tasks.filter(t=>isTaskOwner(t));
   list.innerHTML=tasks.map(t=>{
-    const status=safe(COLUMNS.find(c=>c.id===t.column)?.title||t.column);
+    const workflowStatus=safe(COLUMNS.find(c=>c.id===t.column)?.title||t.column),staffStatus=STAFF_STATUSES.find(s=>s.id===(t.staffStatus||'pending'))||STAFF_STATUSES[0],elements=t.designElements||[],done=elements.filter(x=>x?.completed).length;
     return `<article class="horizontal-card mytask-card" data-id="${t.id}">
       <div class="mytask-main">
         <div class="main-title">${safe(t.title)}</div>
@@ -347,12 +375,13 @@ function renderMyTasks(){
         ${t.notes?`<div class="mytask-notes">${safe(t.notes)}</div>`:''}
         ${renderDesignElements(t.designElements,true)}
       </div>
-      <div class="cell"><small>Status</small><b>${status}</b></div>
+      <div class="cell"><small>حالة التنفيذ</small><b class="staff-status-text status-${staffStatus.id}">${safe(staffStatus.label)}</b><span>${done}/${elements.length} عناصر</span></div>
+      <div class="cell"><small>Board Status</small><b>${workflowStatus}</b></div>
       <div class="cell"><small>Due</small><b>${safe(t.due||'-')}</b></div>
       <div class="cell"><small>Priority</small><b>${safe(t.priority||'Normal')}</b></div>
       <div class="cell"><small>Files</small><b>${(t.attachments||[]).length}</b></div>
       <div class="mytask-actions-panel">
-        <div class="permission-note">عرض فقط — تعديل التاسك متاح للـAdmin</div>
+        <div class="permission-note">يمكنك تحديث العناصر والحالة وإضافة رابط التسليم من تفاصيل التاسك.</div>
         ${t.driveLink?`<a class="delivery-link" href="${safe(t.driveLink)}" target="_blank" rel="noopener">فتح رابط التسليم</a>`:''}
         <div class="row-actions">
           <button type="button" data-ai-brief="${t.id}">عرض البريف</button>
@@ -516,7 +545,7 @@ function openTask(id='',boardType=currentBoardType()){
   const t=state.tasks.find(x=>x.id===id)||null; const type=normalizeBoardType(t?.boardType||boardType); pendingFiles=[];$('#taskDialogTitle').textContent=isAdmin()?(t?'تعديل التاسك':'إنشاء تاسك جديد'):'تفاصيل التاسك'; $('#taskId').value=t?.id||''; $('#taskBoardType').value=type; $('#taskTitle').value=t?.title||''; $('#taskEvent').value=t?.eventId||state.events[0]?.id||''; $('#taskColumn').value=t?.column||'todo'; $('#taskOwner').value=t?.owner||currentUser()?.id||''; $('#taskPriority').value=t?.priority||'Normal'; $('#taskDue').value=t?.due||''; $('#taskTags').value=t?.tags||''; $('#taskNotes').value=t?.notes||'';$('#taskDriveLink').value=t?.driveLink||''; $('#taskDelayReason').value=t?.delayReason||''; $('#deleteTaskBtn').classList.toggle('hidden',!t||!isAdmin());
   updateTaskBoardFields();
   $('#delayReasonWrap').classList.add('hidden'); $('#taskDelayReason').disabled=true;
-  renderTaskExperience(t);const ev=$('#taskElementsView'); if(ev){ev.classList.toggle('empty',!(t?.designElements||[]).length); ev.innerHTML=renderDesignElementsTable(t?.designElements||[])||'لم يتم استخراج عناصر بعد';}
+  renderTaskExperience(t);renderTaskProgressPanel(t);const ev=$('#taskElementsView'); if(ev){const interactive=canUpdateTaskProgress(t);ev.classList.toggle('empty',!(t?.designElements||[]).length); ev.innerHTML=renderDesignElementsTable(t?.designElements||[],interactive)||'لم يتم استخراج عناصر بعد';if(interactive)ev.querySelectorAll('[data-element-check]').forEach(x=>x.onchange=updateTaskProgressCounter)}
   setTaskDialogReadOnly(!isAdmin());renderAttachmentPreview(t?.attachments||[]); $('#taskDialog').showModal();
 }
 function renderAttachmentPreview(atts){const wrap=$('#taskAttachmentsPreview'); wrap.innerHTML=atts.map(a=>`<div class="attachment-card" data-att="${a.id}">${a.type?.startsWith('image/')?`<img src="${safe(attachmentUrl(a))}" alt="">`:`<div class="pdf-chip">PDF</div>`}<a href="${safe(attachmentUrl(a))}" target="_blank" rel="noopener">فتح ${safe(a.name)}</a>${isAdmin()&&!a.pending?`<button type="button" data-del-att="${a.id}">حذف</button>`:''}</div>`).join(''); wrap.querySelectorAll('[data-del-att]').forEach(b=>b.onclick=async()=>{const id=$('#taskId').value; const t=state.tasks.find(x=>x.id===id); const file=t?.attachments?.find(a=>a.id===b.dataset.delAtt); if(!t||!file)return; const next={...t,attachments:t.attachments.filter(a=>a.id!==file.id),updatedAt:new Date().toISOString()}; try{await dbUpsertTask(next);await deleteStudioFile(file.path)}catch(err){alert('لم يتم حذف الملف من Supabase: '+err.message);return}Object.assign(t,next);saveState();log('Delete Attachment',file.name,t.title);renderAttachmentPreview(t.attachments);render();})}
